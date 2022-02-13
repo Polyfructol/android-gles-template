@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+		package="com.example.app"
+		android:versionCode="1" 
+		android:versionName="1.0"
+		android:installLocation="auto">
+
+	<uses-sdk android:minSdkVersion="29" android:targetSdkVersion="29" android:compileSdkVersion="30" />
+	<uses-feature android:glEsVersion="0x00030001" android:required="true" />
+
+	<uses-feature android:name="android.hardware.vr.headtracking" android:required="true" />
+
+	<!-- Internet needed for gdb-server -->
+	<uses-permission android:name="android.permission.INTERNET" />
+
+	<!-- Network access needed for vrapi -->
+	<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+	<application android:label="app" android:debuggable="true">
+		<meta-data android:name="com.samsung.android.vr.application.mode" android:value="vr_only"/>
+    	<meta-data android:name="com.oculus.supportedDevices" android:value="all" />    
+		<activity
+				android:name="com.example.app.NativeActivity"
+				android:theme="@style/NativeActivity"
+				android:launchMode="singleTask"
+				android:screenOrientation="fullSensor" 
+				android:excludeFromRecents="false"
+				android:configChanges="screenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation|uiMode">
+				<intent-filter>
+					<action android:name="android.intent.action.MAIN" />
+					<category android:name="com.oculus.intent.category.VR" />
+					<category android:name="android.intent.category.LAUNCHER" />
+			</intent-filter>
+		</activity>
+	</application>
+</manifest>
