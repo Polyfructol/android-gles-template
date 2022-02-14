@@ -4,7 +4,8 @@ ANDROID_PLATFORM=$(ANDROID_HOME)/platforms/android-32
 
 PACKAGE=com.example.app
 PACKAGE_DIR=$(subst .,/,$(PACKAGE))
-APK_NAME=app.apk
+FINAL_APK=app.apk
+APK=$(FINAL_APK).unaligned
 
 #TARGET_HOST=arm-linux-androideabi
 CC=clang --target=aarch64-linux-android
@@ -16,6 +17,8 @@ LDLIBS=-llog -landroid -lGLESv3 -lEGL -lm
 
 # Javac flags
 # bootclasspath "" to avoid warnings
+JAVA_SRCS=java/$(PACKAGE_DIR)/NativeWrapper.java java/$(PACKAGE_DIR)/NativeActivity.java
+JAVA_OBJS=bin/$(PACKAGE_DIR)/NativeWrapper.class bin/$(PACKAGE_DIR)/NativeActivity.class
 JAVACFLAGS=-classpath $(ANDROID_PLATFORM)/android.jar:bin -bootclasspath "" -target 8 -source 8 -d 'bin'
 
 #TODO: find why there is this 30/31 folder
@@ -31,7 +34,7 @@ BINARIES=lib/arm64-v8a/libapp.so
 
 .PHONY: all clean run attach-debugger install killall log
 
-all: $(APK_NAME)
+all: $(FINAL_APK)
 
 -include $(DEPS)
 
@@ -41,50 +44,34 @@ bin gen lib/arm64-v8a:
 src/%.o: src/%.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
-lib/arm64-v8a/libapp.so: $(OBJS) | lib/arm64-v8a
+lib/arm64-v8a/libapp.so: $(OBJS) | lib/arm64-v8a $(APK)
 	$(CC) -shared $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
+	zip -u $(APK) $@
 
 # Explicitly list java dependencies
-java/$(PACKAGE_DIR)/NativeActivity.java: bin/$(PACKAGE_DIR)/NativeWrapper.class
+bin/$(PACKAGE_DIR)/NativeActivity.class: java/$(PACKAGE_DIR)/NativeWrapper.java
 
-bin/$(PACKAGE_DIR)/%.class: java/$(PACKAGE_DIR)/%.java | bin
-	javac $(JAVACFLAGS) $<
+classes.dex: $(JAVA_SRCS) | $(APK)
+	javac $(JAVACFLAGS) $(JAVA_SRCS)
+	d8 --no-desugaring --classpath bin $(JAVA_OBJS)
+	zip -u $(APK) $@
 
-gen/$(PACKAGE_DIR)/R.java: AndroidManifest.xml $(wildcard res/*/*) | gen
-	aapt package -f -m -J gen -M $< -S res -I $(ANDROID_PLATFORM)/android.jar
+res_compiled.zip:
+	aapt2 compile --dir res -o res_compiled.zip
 
-bin/$(PACKAGE_DIR)/%.class: gen/$(PACKAGE_DIR)/%.java | bin
-	javac $(JAVACFLAGS) $<
+$(APK): res_compiled.zip AndroidManifest.xml
+	aapt2 link res_compiled.zip -o $(APK) -I $(ANDROID_PLATFORM)/android.jar -A assets --manifest AndroidManifest.xml
 
-classes.dex: bin/$(PACKAGE_DIR)/R.class bin/$(PACKAGE_DIR)/NativeWrapper.class bin/$(PACKAGE_DIR)/NativeActivity.class
-	d8 --no-desugaring --classpath bin $^
+$(FINAL_APK): $(APK) res_compiled.zip AndroidManifest.xml lib/arm64-v8a/libapp.so classes.dex
+	jarsigner -keystore debug.keystore -storepass 'android' $(APK) androiddebugkey
+	zipalign -f 4 $(APK) $@
 
-$(APK_NAME).unaligned: classes.dex $(BINARIES)
-	aapt package -f -M AndroidManifest.xml -S res -I $(ANDROID_PLATFORM)/android.jar -F $(APK_NAME).unaligned
-	aapt add $(APK_NAME).unaligned lib/**/*
-	aapt add $(APK_NAME).unaligned classes.dex
-	find assets -type f | xargs aapt add $(APK_NAME).unaligned
-	jarsigner -keystore debug.keystore -storepass 'android' $(APK_NAME).unaligned androiddebugkey
-
-$(APK_NAME): $(APK_NAME).unaligned
-	zipalign -f 4 $^ $@
-
-# TODO: Move to aapt2
-# https://community.e.foundation/t/bacol-build-apks-from-the-command-line-aka-bacol/20891
-# https://github.com/TheDotLabs/Bacol/blob/master/bacol.sh
-# aapt2 link -o output.apk -I $ANDROID_PLATFORM/android.jar -A assets/assets  --manifest AndroidManifest.xml
-
-# aapt2 compile --dir res -o compiled/res.zip
-# aapt2 link compiled/res.zip -o output.apk -I $ANDROID_PLATFORM/android.jar -A assets/assets  --manifest AndroidManifest.xml
-# zip -u output.apk classes.dex
-# zip -u output.apk lib/arm64-v8a/libapp.so
-# jarsigner -keystore debug.keystore -storepass 'android' output.apk androiddebugkey
 clean:
-	rm -rf gen bin lib classes.dex $(APK_NAME) $(APK_NAME).unaligned
+	rm -rf gen bin lib classes.dex $(APK) $(FINAL_APK) res_compiled.zip
 	rm -rf src/*.o src/*.d debug-executable
 
-install: $(APK_NAME)
-	adb install -r $(APK_NAME)
+install: $(FINAL_APK)
+	adb install -r $(FINAL_APK)
 
 run: install
 	adb shell am start-activity -n $(PACKAGE)/$(PACKAGE).NativeActivity
