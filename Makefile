@@ -46,6 +46,7 @@ src/%.o: src/%.c
 
 lib/arm64-v8a/libapp.so: $(OBJS) | lib/arm64-v8a $(APK)
 	$(CC) -shared $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
+	llvm-strip $@
 	zip -u $(APK) $@
 
 # Explicitly list java dependencies
