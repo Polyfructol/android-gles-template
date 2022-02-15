@@ -15,6 +15,9 @@ CPPFLAGS=-MMD -Isrc
 LDFLAGS=-Wl,--no-undefined
 LDLIBS=-llog -landroid -lGLESv3 -lEGL -lm
 
+FILES_TO_ZIP=lib/arm64-v8a/libapp.so classes.dex
+FILES_TO_ZIP_FLAGS=$(addsuffix .zipped_to_apk,$(FILES_TO_ZIP))
+
 # Javac flags
 # bootclasspath "" to avoid warnings
 JAVA_SRCS=java/$(PACKAGE_DIR)/NativeWrapper.java java/$(PACKAGE_DIR)/NativeActivity.java
@@ -44,10 +47,13 @@ bin gen lib/arm64-v8a:
 src/%.o: src/%.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
-lib/arm64-v8a/libapp.so: $(OBJS) | lib/arm64-v8a $(APK)
+%.zipped_to_apk: % | $(APK)
+	touch $@
+	zip -u $(APK) $<
+
+lib/arm64-v8a/libapp.so: $(OBJS) | lib/arm64-v8a
 	$(CC) -shared $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	llvm-strip $@
-	zip -u $(APK) $@
 
 # Explicitly list java dependencies
 bin/$(PACKAGE_DIR)/NativeActivity.class: java/$(PACKAGE_DIR)/NativeWrapper.java
@@ -55,20 +61,20 @@ bin/$(PACKAGE_DIR)/NativeActivity.class: java/$(PACKAGE_DIR)/NativeWrapper.java
 classes.dex: $(JAVA_SRCS) | $(APK)
 	javac $(JAVACFLAGS) $(JAVA_SRCS)
 	d8 --no-desugaring --classpath bin $(JAVA_OBJS)
-	zip -u $(APK) $@
 
 res_compiled.zip:
 	aapt2 compile --dir res -o res_compiled.zip
 
 $(APK): res_compiled.zip AndroidManifest.xml
+	rm -f $(FILES_TO_ZIP_FLAGS)
 	aapt2 link res_compiled.zip -o $(APK) -I $(ANDROID_PLATFORM)/android.jar -A assets --manifest AndroidManifest.xml
 
-$(FINAL_APK): $(APK) res_compiled.zip AndroidManifest.xml lib/arm64-v8a/libapp.so classes.dex
+$(FINAL_APK): $(APK) res_compiled.zip AndroidManifest.xml $(FILES_TO_ZIP_FLAGS)
 	jarsigner -keystore debug.keystore -storepass 'android' $(APK) androiddebugkey
 	zipalign -f 4 $(APK) $@
 
 clean:
-	rm -rf gen bin lib classes.dex $(APK) $(FINAL_APK) res_compiled.zip
+	rm -rf gen bin lib classes.dex $(FILES_TO_ZIP_FLAGS) $(APK) $(FINAL_APK) res_compiled.zip
 	rm -rf src/*.o src/*.d debug-executable
 
 install: $(FINAL_APK)
