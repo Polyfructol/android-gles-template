@@ -20,11 +20,17 @@ LDLIBS=-llog -landroid -lGLESv3 -lEGL -lm -static-libstdc++
 FILES_TO_ZIP=lib/arm64-v8a/libapp.so classes.dex
 FILES_TO_ZIP_FLAGS=$(addsuffix .zipped_to_apk,$(FILES_TO_ZIP))
 
+RESOURCES=res/values/strings.xml res/values/style.xml res/layout/activity_main.xml
+
+CL_RESOURCES=externals/constraintlayout/res/values/attrs.xml externals/constraintlayout/res/values/ids.xml
 # Javac flags
 # bootclasspath "" to avoid warnings
-JAVA_SRCS=java/$(PACKAGE_DIR)/NativeWrapper.java java/$(PACKAGE_DIR)/NativeActivity.java
-JAVA_OBJS=bin/$(PACKAGE_DIR)/NativeWrapper.class bin/$(PACKAGE_DIR)/NativeActivity.class
-JAVACFLAGS=-classpath $(ANDROID_PLATFORM)/android.jar:bin -bootclasspath "" -target 8 -source 8 -d 'bin'
+JAVA_SRCS=java/$(PACKAGE_DIR)/NativeWrapper.java java/$(PACKAGE_DIR)/NativeActivity.java java/$(PACKAGE_DIR)/MainActivity.java
+
+JAVA_GENS=gen/$(PACKAGE_DIR)/R.java
+
+JAVA_OBJS=$(subst .java,.class,$(subst java/,bin/,$(JAVA_SRCS)) $(subst gen/,bin/,$(JAVA_GENS)))
+JAVACFLAGS=-classpath $(ANDROID_PLATFORM)/android.jar:bin:externals/constraintlayout/java -bootclasspath "" -target 8 -source 8 -d 'bin'
 
 #TODO: find why there is this 30/31 folder
 #TODO: HACK: I just moved 31 content into parent...
@@ -68,16 +74,19 @@ lib/arm64-v8a/libapp.so: $(OBJS) | lib/arm64-v8a
 # Explicitly list java dependencies
 bin/$(PACKAGE_DIR)/NativeActivity.class: java/$(PACKAGE_DIR)/NativeWrapper.java
 
+bin/$(PACKAGE_DIR)/R.class: gen/$(PACKAGE_DIR)/R.java | bin
+	javac -classpath "$(ANDROID_PLATFORM)/android.jar" -sourcepath 'src:gen' -target 1.8 -source 1.8 -d 'bin' $<
+
 classes.dex: $(JAVA_SRCS) | $(APK)
-	javac $(JAVACFLAGS) $(JAVA_SRCS)
+	javac $(JAVACFLAGS) $(JAVA_SRCS) $(JAVA_GENS)
 	d8 --no-desugaring --classpath bin $(JAVA_OBJS)
 
-res_compiled.zip:
-	aapt2 compile --dir res -o res_compiled.zip
+res_compiled.zip: $(RESOURCES)
+	aapt2 compile --dir res -o $@
 
 $(APK): res_compiled.zip AndroidManifest.xml
 	rm -f $(FILES_TO_ZIP_FLAGS)
-	aapt2 link res_compiled.zip -o $(APK) -I $(ANDROID_PLATFORM)/android.jar -A assets --manifest AndroidManifest.xml
+	aapt2 link res_compiled.zip -o $(APK) -I $(ANDROID_PLATFORM)/android.jar -A assets --java gen --manifest AndroidManifest.xml
 
 $(FINAL_APK): $(APK) res_compiled.zip AndroidManifest.xml $(FILES_TO_ZIP_FLAGS)
 	jarsigner -keystore debug.keystore -storepass 'android' $(APK) androiddebugkey

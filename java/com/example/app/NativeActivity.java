@@ -140,7 +140,7 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
     @Override
     public void onWindowFocusChanged(boolean hasFocus)
     {
-        super.onResume();
+        super.onWindowFocusChanged(hasFocus);
         NativeWrapper.onWindowFocusChanged(mNativeHandle, hasFocus);
     }
 
@@ -185,6 +185,15 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
         int x = (int)event.getRawX();
         int y = (int)event.getRawY();
         int action = event.getAction();
+
+        // Hack to correct location when view is not fullscreen...
+        // TODO: What if multiple pointers...
+        // getX() and getY() were not correct
+        {
+            int offsets[] = { 0, 0 };
+            mView.getLocationOnScreen(offsets);
+            event.setLocation(x - offsets[0], y - offsets[1]);
+        }
 
         return NativeWrapper.dispatchTouchEvent(mNativeHandle, event, x, y, action) || super.dispatchTouchEvent(event);
     }
