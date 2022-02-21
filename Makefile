@@ -9,11 +9,13 @@ APK=$(FINAL_APK).unaligned
 
 #TARGET_HOST=arm-linux-androideabi
 CC=clang --target=aarch64-linux-android
-CFLAGS=-Wall -O0 -g -funwind-tables -fPIC
+CXX=clang++ --target=aarch64-linux-android
+CFLAGS=-Wall -O0 -g -funwind-tables -fPIC -fvisibility=hidden
 CFLAGS+=-Wno-unused-function
-CPPFLAGS=-MMD -Isrc
+CXXFLAGS=$(CFLAGS) -fno-exceptions -fno-rtti
+CPPFLAGS=-MMD -Isrc -Iexternals/include
 LDFLAGS=-Wl,--no-undefined
-LDLIBS=-llog -landroid -lGLESv3 -lEGL -lm
+LDLIBS=-llog -landroid -lGLESv3 -lEGL -lm -static-libstdc++
 
 FILES_TO_ZIP=lib/arm64-v8a/libapp.so classes.dex
 FILES_TO_ZIP_FLAGS=$(addsuffix .zipped_to_apk,$(FILES_TO_ZIP))
@@ -28,7 +30,12 @@ JAVACFLAGS=-classpath $(ANDROID_PLATFORM)/android.jar:bin -bootclasspath "" -tar
 #TODO: HACK: I just moved 31 content into parent...
 #LDFLAGS+=-L/home/paul/android/android-sdk/ndk/23.1.7779620/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/31/
 
-OBJS=src/activity.o src/gles2.o src/egl.o src/game.o
+OBJS=src/activity.o src/game.o
+OBJS+=src/imgui_test.o
+OBJS+=externals/src/gles2.o externals/src/egl.o
+OBJS+=externals/src/imgui.o externals/src/imgui_draw.o externals/src/imgui_tables.o externals/src/imgui_widgets.o
+OBJS+=externals/src/imgui_impl_android.o externals/src/imgui_impl_opengl3.o
+OBJS+=externals/src/imgui_demo.o
 DEPS=$(OBJS:.o=.d)
 
 BINARIES=lib/arm64-v8a/libapp.so
@@ -47,12 +54,15 @@ bin gen lib/arm64-v8a:
 src/%.o: src/%.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c $< -o $@
 
+src/%.o: src/%.cpp
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+
 %.zipped_to_apk: % | $(APK)
 	touch $@
 	zip -u $(APK) $<
 
 lib/arm64-v8a/libapp.so: $(OBJS) | lib/arm64-v8a
-	$(CC) -shared $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
+	$(CXX) -shared $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	llvm-strip $@
 
 # Explicitly list java dependencies
@@ -75,7 +85,7 @@ $(FINAL_APK): $(APK) res_compiled.zip AndroidManifest.xml $(FILES_TO_ZIP_FLAGS)
 
 clean:
 	rm -rf gen bin lib classes.dex $(FILES_TO_ZIP_FLAGS) $(APK) $(FINAL_APK) res_compiled.zip
-	rm -rf src/*.o src/*.d debug-executable
+	rm -rf $(OBJS) $(DEPS) debug-executable
 
 install: $(FINAL_APK)
 	adb install -r $(FINAL_APK)

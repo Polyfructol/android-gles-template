@@ -11,18 +11,18 @@
 	<!-- Internet needed for gdb-server -->
 	<uses-permission android:name="android.permission.INTERNET" />
 
-	<application android:label="app" android:debuggable="false">
-    	<meta-data android:name="com.oculus.supportedDevices" android:value="all" />    
+	<application 
+		android:label="app" android:debuggable="true">
 		<activity
-				android:name="com.example.app.NativeActivity"
-				android:theme="@style/NativeActivity"
-				android:launchMode="singleTask"
-				android:screenOrientation="fullSensor" 
-				android:excludeFromRecents="false"
-				android:configChanges="screenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation|uiMode">
-				<intent-filter>
-					<action android:name="android.intent.action.MAIN" />
-					<category android:name="android.intent.category.LAUNCHER" />
+			android:name="com.example.app.NativeActivity"
+			android:theme="@style/NativeActivity"
+			android:launchMode="singleTask"
+			android:screenOrientation="fullSensor" 
+			android:excludeFromRecents="false"
+			android:configChanges="screenSize|screenLayout|orientation|keyboardHidden|navigation|uiMode">
+			<intent-filter>
+				<action android:name="android.intent.action.MAIN" />
+				<category android:name="android.intent.category.LAUNCHER" />
 			</intent-filter>
 		</activity>
 	</application>

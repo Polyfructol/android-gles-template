@@ -12,6 +12,7 @@ import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -32,8 +33,9 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
     private static final String TAG = "EmptyApp";
 
     private SurfaceView mView;
-    private SurfaceHolder mSurfaceHolder;
     private long mNativeHandle;
+
+    private InputMethodManager mInputMethodManager; // (show/hide)SoftInput
 
     private void copyFile(InputStream in, OutputStream out) throws IOException
     {
@@ -95,6 +97,8 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
 
         String filesDir = getApplicationContext().getFilesDir().getAbsolutePath();
         mNativeHandle = NativeWrapper.onCreate(this, filesDir);
+
+        mInputMethodManager = (InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE);
     }
 
     @Override
@@ -150,32 +154,48 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height)
     {
         NativeWrapper.surfaceChanged(mNativeHandle, format, width, height);
-        mSurfaceHolder = holder;
     }
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder)
     {
         NativeWrapper.surfaceDestroyed(mNativeHandle);
-        mSurfaceHolder = null;
     }
 
     @Override
-    public boolean dispatchKeyEvent(KeyEvent ev)
+    public boolean dispatchKeyEvent(KeyEvent event)
     {
-        int keyCode = ev.getKeyCode();
-        int action = ev.getAction();
+        int keyCode = event.getKeyCode();
+        int action = event.getAction();
 
-        return NativeWrapper.dispatchKeyEvent(mNativeHandle, keyCode, action) || super.dispatchKeyEvent(ev);
+        int unicodeChar = 0;
+        if (event.getAction() == KeyEvent.ACTION_DOWN)
+            unicodeChar = event.getUnicodeChar(event.getMetaState());
+
+        // Hack to get at least some special characters
+        else if (event.getAction() == KeyEvent.ACTION_MULTIPLE && keyCode == 0)
+            unicodeChar = event.getCharacters().charAt(0);
+
+        return NativeWrapper.dispatchKeyEvent(mNativeHandle, event, keyCode, unicodeChar, action) || super.dispatchKeyEvent(event);
+    }
+    
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event)
+    {
+        int x = (int)event.getRawX();
+        int y = (int)event.getRawY();
+        int action = event.getAction();
+
+        return NativeWrapper.dispatchTouchEvent(mNativeHandle, event, x, y, action) || super.dispatchTouchEvent(event);
     }
 
-    @Override
-    public boolean dispatchTouchEvent(MotionEvent ev)
+    public void showSoftInput()
     {
-        int x = (int)ev.getRawX();
-        int y = (int)ev.getRawY();
-        int action = ev.getAction();
+        mInputMethodManager.showSoftInput(this.getWindow().getDecorView(), InputMethodManager.SHOW_IMPLICIT);
+    }
 
-        return NativeWrapper.dispatchTouchEvent(mNativeHandle, x, y, action) || super.dispatchTouchEvent(ev);
+    public void hideSoftInput()
+    {
+        mInputMethodManager.hideSoftInputFromWindow(mView.getWindowToken(), InputMethodManager.HIDE_IMPLICIT_ONLY);
     }
 }

@@ -302,7 +302,6 @@ GLuint gl_CreateProgram(int shaderCount, ShaderDesc* shaderDescs)
 
 void gl_UploadTexture(const char* Filename, int* WidthOut, int* HeightOut)
 {
-
     // Desired channels
     int DesiredChannels = 0;
     int Channels = 0;
@@ -373,12 +372,13 @@ void game_LoadGPUData(Game* game)
                     "out vec3 vColor;\n"
                     "out vec2 vUV;\n"
                     "out vec3 vWorldNormal;\n"
+                    "uniform float uTime;\n"
                     "void main()\n"
                     "{\n"
                     "    vColor = aColor;\n"
                     "    vUV = aUV;\n"
                     "    vWorldNormal = (uModel * vec4(aNormal, 0.0)).xyz;\n"
-                    "    gl_Position = uProj * uView * uModel * vec4(aPosition, 1.0);\n"
+                    "    gl_Position = uProj * uView * uModel * vec4(mix(0.8, 1.3, 0.5 + 0.5 * cos(uTime * 2.0)) * aPosition, 1.0);\n"
                     "}\n"
                 }
             },

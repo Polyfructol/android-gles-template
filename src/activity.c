@@ -17,6 +17,8 @@
 
 #include "game.h"
 
+#include "imgui_test.h"
+
 typedef struct EGL
 {
     EGLDisplay display;
@@ -70,13 +72,16 @@ typedef struct Event
 
         struct DispatchKeyEvent
         {
+            const AInputEvent* nativeEvent;
             int action;
             int keyCode;
+            int unicodeChar;
             bool* resultPtr;
         } dispatchKeyEvent;
         
         struct DispatchTouchEvent
         {
+            const AInputEvent* nativeEvent;
             int action;
             int x;
             int y;
@@ -96,12 +101,20 @@ typedef struct Event
     };
 } Event;
 
+typedef struct NativeActivity
+{
+    jclass clazz;
+    jobject object;
+    jmethodID showSoftInput;
+    jmethodID hideSoftInput;
+} NativeActivity;
+
 typedef struct AppThread
 {
     pthread_t thread;
     JavaVM* javaVM;
     JNIEnv* jniEnv;
-    jobject activity;
+    NativeActivity activity;
 
     ANativeWindow* nativeWindow;
 
@@ -121,6 +134,7 @@ typedef struct App
 
     Game* game;
     GameInputs gameInputs;
+    ImGuiTest* imguiTest;
 } App;
 
 static const char* egl_ErrorString(const EGLint error)
@@ -175,7 +189,7 @@ static bool egl_Init(EGL* egl)
     ALOGV("EGL_CLIENT_APIS: %s", eglQueryString(egl->display, EGL_CLIENT_APIS));
     ALOGV("EGL_VENDOR: %s",      eglQueryString(egl->display, EGL_VENDOR));
     ALOGV("EGL_VERSION: %s",     eglQueryString(egl->display, EGL_VERSION));
-    //ALOGV("EGL_EXTENSIONS: %s",  eglQueryString(egl->display, EGL_EXTENSIONS));
+    ALOGV("EGL_EXTENSIONS: %s",  eglQueryString(egl->display, EGL_EXTENSIONS));
 
     gladLoaderUnloadEGL();
     assert(gladLoadEGL(egl->display, (GLADloadfunc)eglGetProcAddress));
@@ -233,6 +247,7 @@ static void egl_Shutdown(EGL* egl)
     ALOGV("egl_Shutdown()");
     eglDestroyContext(egl->display, egl->context);
     eglTerminate(egl->display);
+    ALOGV("egl_Shutdown() ended");
 }
 
 static void egl_DestroyAndUnbindSurface(EGL* egl)
@@ -254,6 +269,23 @@ static void egl_CreateAndBindSurface(EGL* egl, ANativeWindow* nativeWindow)
     if (egl->surface == NULL)
         ALOGV("eglCreateWindowSurface failed");
     eglMakeCurrent(egl->display, egl->surface, egl->surface, egl->context);
+}
+
+static void nativeActivity_Register(JNIEnv* env, NativeActivity* activity)
+{
+    activity->clazz = (*env)->GetObjectClass(env, activity->object);
+    activity->showSoftInput = (*env)->GetMethodID(env, activity->clazz, "showSoftInput", "()V");
+    activity->hideSoftInput = (*env)->GetMethodID(env, activity->clazz, "hideSoftInput", "()V");
+}
+
+static void nativeActivity_ShowSoftInput(JNIEnv* env, const NativeActivity* activity)
+{
+    (*env)->CallVoidMethod(env, activity->object, activity->showSoftInput);
+}
+
+static void nativeActivity_HideSoftInput(JNIEnv* env, const NativeActivity* activity)
+{
+    (*env)->CallVoidMethod(env, activity->object, activity->hideSoftInput);
 }
 
 static bool appThread_PollEvent(AppThread* appThread, Event* event, bool waitForEvent)
@@ -327,11 +359,15 @@ static bool appThread_HandleEvents(AppThread* appThread, App* app)
             case EventType_Create:
                 egl_Init(&app->egl);
                 app->game = game_Init();
+                app->imguiTest = test_Init();
+                game_LoadGPUData(app->game);
                 break;
 
             case EventType_Destroy:
-                game_Destroy(app->game);
                 egl_Shutdown(&app->egl);
+                test_Shutdown(app->imguiTest);
+                game_UnloadGPUData(app->game);
+                game_Destroy(app->game);
                 return false;
 
             case EventType_Start:
@@ -342,17 +378,16 @@ static bool appThread_HandleEvents(AppThread* appThread, App* app)
 
             case EventType_SurfaceCreated:
                 egl_CreateAndBindSurface(&app->egl, event.surfaceCreated.nativeWindow);
-                game_LoadGPUData(app->game);
+                test_Load(app->imguiTest, event.surfaceCreated.nativeWindow);
                 break;
 
             case EventType_SurfaceChanged:
-                ALOGV("format = 0x%x", event.surfaceChanged.format);
                 app->gameInputs.displayWidth = event.surfaceChanged.width;
                 app->gameInputs.displayHeight = event.surfaceChanged.height;
                 break;
 
             case EventType_SurfaceDestroyed:
-                game_UnloadGPUData(app->game);
+                test_Unload(app->imguiTest);
                 egl_DestroyAndUnbindSurface(&app->egl);
                 break;
 
@@ -368,18 +403,21 @@ static bool appThread_HandleEvents(AppThread* appThread, App* app)
                 break;
 
             case EventType_DispatchKeyEvent:
-                ALOGV("Key pressed: %d %d", event.dispatchKeyEvent.keyCode, event.dispatchKeyEvent.action);
+                test_HandleEvent(app->imguiTest, event.dispatchKeyEvent.nativeEvent);
+                if (event.dispatchKeyEvent.unicodeChar != 0)
+                    test_InputUnicodeChar(app->imguiTest, event.dispatchKeyEvent.unicodeChar);
                 break;
 
             case EventType_DispatchTouchEvent:
+                test_HandleEvent(app->imguiTest, event.dispatchTouchEvent.nativeEvent);
                 app->gameInputs.touchX = event.dispatchTouchEvent.x;
                 app->gameInputs.touchY = event.dispatchTouchEvent.y;
+
                 //ALOGV("Touch pressed: %d %d %d", event.dispatchTouchEvent.x, event.dispatchTouchEvent.y, event.dispatchTouchEvent.action);
                 break;
             default:;
         }
     }
-
 
     return true;
 }
@@ -392,6 +430,9 @@ static void* appThread_Func(void* arg)
     // Init thread related data
     (*appThread->javaVM)->AttachCurrentThread(appThread->javaVM, &appThread->jniEnv, NULL);
 
+    // Register NativeActivity wrapper
+    nativeActivity_Register(appThread->jniEnv, &appThread->activity);
+
     App* app = calloc(1, sizeof(App));
     int frameIndex = 0;
 
@@ -400,6 +441,16 @@ static void* appThread_Func(void* arg)
         // update
         app->gameInputs.deltaTime = 1.f / 60.f;
         game_Update(app->game, &app->gameInputs);
+
+        assert(app->imguiTest);
+        {
+            ImGuiTestIO* io = test_GetIO(app->imguiTest);
+            test_UpdateAndDraw(app->imguiTest);
+            if (io->showKeyboard)
+                nativeActivity_ShowSoftInput(appThread->jniEnv, &appThread->activity);
+            if (io->hideKeyboard)
+                nativeActivity_HideSoftInput(appThread->jniEnv, &appThread->activity);
+        }
 
         eglSwapBuffers(app->egl.display, app->egl.surface);
         frameIndex++;
@@ -425,15 +476,13 @@ Java_com_example_app_NativeWrapper_onCreate(JNIEnv* jniEnv, jobject obj, jobject
 
     AppThread* appThread = calloc(1, sizeof(AppThread));
     (*jniEnv)->GetJavaVM(jniEnv, &appThread->javaVM);
-    appThread->activity = (*jniEnv)->NewGlobalRef(jniEnv, activity);
+    appThread->activity.object = (*jniEnv)->NewGlobalRef(jniEnv, activity);
 
     pthread_mutex_init(&appThread->mutex, NULL);
     pthread_cond_init(&appThread->eventAddedCond, NULL);
     pthread_cond_init(&appThread->allEventsProcessed, NULL);
 
     pthread_create(&appThread->thread, NULL, appThread_Func, appThread);
-
-    appThread_AddEvent(appThread, (Event){ EventType_Create }, true);
 
     // Chdir to filesDir to be able to fopen copied files
     {
@@ -442,6 +491,8 @@ Java_com_example_app_NativeWrapper_onCreate(JNIEnv* jniEnv, jobject obj, jobject
         chdir(filesDirChars);
         (*jniEnv)->ReleaseStringUTFChars(jniEnv, filesDir, filesDirChars);
     }
+
+    appThread_AddEvent(appThread, (Event){ EventType_Create }, true);
 
     ALOGV("NativeWrapper::onCreate() ended");
     return (jlong)((size_t)appThread);
@@ -455,16 +506,17 @@ Java_com_example_app_NativeWrapper_onDestroy(JNIEnv* jniEnv, jobject obj, jlong 
     AppThread* appThread = (AppThread*)((size_t)handle);
     appThread_AddEvent(appThread, (Event){ EventType_Destroy }, true);
 
+    // We usually never reach this point because app is killed
+
     pthread_join(appThread->thread, NULL);
-    (*jniEnv)->DeleteGlobalRef(jniEnv, appThread->activity);
+    (*jniEnv)->DeleteGlobalRef(jniEnv, appThread->activity.object);
+    appThread->activity = (NativeActivity){};
 
     pthread_mutex_destroy(&appThread->mutex);
     pthread_cond_destroy(&appThread->eventAddedCond);
     pthread_cond_destroy(&appThread->allEventsProcessed);
 
     free(appThread);
-
-    ALOGV("NativeWrapper::onDestroy() complete");
 }
 
 JNIEXPORT void JNICALL
@@ -559,7 +611,7 @@ Input
 */
 
 JNIEXPORT bool JNICALL
-Java_com_example_app_NativeWrapper_dispatchKeyEvent(JNIEnv* jniEnv, jobject obj, jlong handle, int keyCode, int action)
+Java_com_example_app_NativeWrapper_dispatchKeyEvent(JNIEnv* jniEnv, jobject obj, jlong handle, jobject keyEvent, int keyCode, int unicodeChar, int action)
 {
     ALOGV("NativeWrapper::dispatchKeyEvent(%d, %d)", keyCode, action);
 
@@ -568,8 +620,10 @@ Java_com_example_app_NativeWrapper_dispatchKeyEvent(JNIEnv* jniEnv, jobject obj,
         .type = EventType_DispatchKeyEvent,
         .dispatchKeyEvent = 
         {
+            .nativeEvent = AKeyEvent_fromJava(jniEnv, keyEvent),
             .action = action,
             .keyCode = keyCode,
+            .unicodeChar = unicodeChar,
             .resultPtr = &result,
         }
     }, true);
@@ -577,7 +631,7 @@ Java_com_example_app_NativeWrapper_dispatchKeyEvent(JNIEnv* jniEnv, jobject obj,
 }
 
 JNIEXPORT bool JNICALL
-Java_com_example_app_NativeWrapper_dispatchTouchEvent(JNIEnv* jniEnv, jobject obj, jlong handle, int x, int y, int action)
+Java_com_example_app_NativeWrapper_dispatchTouchEvent(JNIEnv* jniEnv, jobject obj, jlong handle, jobject motionEvent, int x, int y, int action)
 {
     //ALOGV("NativeWrapper::dispatchTouchEvent()");
 
@@ -585,6 +639,7 @@ Java_com_example_app_NativeWrapper_dispatchTouchEvent(JNIEnv* jniEnv, jobject ob
         .type = EventType_DispatchTouchEvent,
         .dispatchTouchEvent = 
         {
+            .nativeEvent = AMotionEvent_fromJava(jniEnv, motionEvent),
             .action = action,
             .x = x,
             .y = y,

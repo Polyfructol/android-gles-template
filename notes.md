@@ -55,3 +55,31 @@ import java.net.URL;
 import java.io.BufferedInputStream;
 import android.os.StrictMode;
 ```
+
+
+# GPU contxt
+
+onCreate: egl context available to load data
+onSurfaceCreated: able to start to render
+onSurfaceDestroyed: cannot render but can keep data
+onTrimMemory: perhaps useful to unload gpu data
+onDestroy: elg context destroyed at this point, no need to unload gpu data, to be extra clean we should unvalidate all gpu handles (but the activity is destroyed)
+
+## Mathching interface
+
+- event
+> called once
+
+- onCreate:
+>loadCPUData
+>loadGPUData
+- onSurfaceCreated:
+- onSurfaceChanged:
+render
+render
+render
+- onSurfaceDestroyed
+nothing will happen until onSurfaceCreated is created again
+- onTrimMemory (TODO) https://developer.android.com/games/optimize/memory-allocation
+unloadGPUData
+unloadCPUData
