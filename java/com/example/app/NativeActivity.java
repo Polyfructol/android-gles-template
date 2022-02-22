@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.content.res.AssetManager;
 import android.media.AudioManager;
 import android.os.Bundle;
+import android.os.Vibrator;
+import android.os.VibrationEffect;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -36,6 +38,7 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
     private long mNativeHandle;
 
     private InputMethodManager mInputMethodManager; // (show/hide)SoftInput
+    private Vibrator mVibrator;
 
     private void copyFile(InputStream in, OutputStream out) throws IOException
     {
@@ -99,6 +102,7 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
         mNativeHandle = NativeWrapper.onCreate(this, filesDir);
 
         mInputMethodManager = (InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE);
+        mVibrator = (Vibrator)getSystemService(Context.VIBRATOR_SERVICE);
     }
 
     @Override
@@ -206,5 +210,10 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
     public void hideSoftInput()
     {
         mInputMethodManager.hideSoftInputFromWindow(mView.getWindowToken(), InputMethodManager.HIDE_IMPLICIT_ONLY);
+    }
+
+    public void vibrate(int effectId)
+    {
+        mVibrator.vibrate(VibrationEffect.createPredefined(effectId));
     }
 }

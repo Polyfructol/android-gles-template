@@ -107,6 +107,7 @@ typedef struct NativeActivity
     jobject object;
     jmethodID showSoftInput;
     jmethodID hideSoftInput;
+    jmethodID vibrate;
 } NativeActivity;
 
 typedef struct AppThread
@@ -276,6 +277,7 @@ static void nativeActivity_Register(JNIEnv* env, NativeActivity* activity)
     activity->clazz = (*env)->GetObjectClass(env, activity->object);
     activity->showSoftInput = (*env)->GetMethodID(env, activity->clazz, "showSoftInput", "()V");
     activity->hideSoftInput = (*env)->GetMethodID(env, activity->clazz, "hideSoftInput", "()V");
+    activity->vibrate = (*env)->GetMethodID(env, activity->clazz, "vibrate", "(I)V");
 }
 
 static void nativeActivity_ShowSoftInput(JNIEnv* env, const NativeActivity* activity)
@@ -286,6 +288,11 @@ static void nativeActivity_ShowSoftInput(JNIEnv* env, const NativeActivity* acti
 static void nativeActivity_HideSoftInput(JNIEnv* env, const NativeActivity* activity)
 {
     (*env)->CallVoidMethod(env, activity->object, activity->hideSoftInput);
+}
+
+static void nativeActivity_Vibrate(JNIEnv* env, const NativeActivity* activity, int effectId)
+{
+    (*env)->CallVoidMethod(env, activity->object, activity->vibrate, effectId);
 }
 
 static bool appThread_PollEvent(AppThread* appThread, Event* event, bool waitForEvent)
@@ -447,9 +454,14 @@ static void* appThread_Func(void* arg)
             ImGuiTestIO* io = test_GetIO(app->imguiTest);
             test_UpdateAndDraw(app->imguiTest);
             if (io->showKeyboard)
+            {
+                nativeActivity_Vibrate(appThread->jniEnv, &appThread->activity, 2);
                 nativeActivity_ShowSoftInput(appThread->jniEnv, &appThread->activity);
+            }
             if (io->hideKeyboard)
+            {
                 nativeActivity_HideSoftInput(appThread->jniEnv, &appThread->activity);
+            }    
         }
 
         eglSwapBuffers(app->egl.display, app->egl.surface);

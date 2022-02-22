@@ -11,6 +11,7 @@
 
 	<!-- Internet needed for gdb-server -->
 	<uses-permission android:name="android.permission.INTERNET" />
+	<uses-permission android:name="android.permission.VIBRATE" />
 
 	<application 
 			android:label="@string/app_name"
