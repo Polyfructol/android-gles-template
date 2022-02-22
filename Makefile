@@ -7,9 +7,9 @@ PACKAGE_DIR=$(subst .,/,$(PACKAGE))
 FINAL_APK=app.apk
 APK=$(FINAL_APK).unaligned
 
-#TARGET_HOST=arm-linux-androideabi
-CC=clang --target=aarch64-linux-android
-CXX=clang++ --target=aarch64-linux-android
+TARGET_HOST=aarch64-linux-android31
+CC=clang --target=$(TARGET_HOST)
+CXX=clang++ --target=$(TARGET_HOST)
 CFLAGS=-Wall -O0 -g -funwind-tables -fPIC -fvisibility=hidden
 CFLAGS+=-Wno-unused-function
 CXXFLAGS=$(CFLAGS) -fno-exceptions -fno-rtti
@@ -31,10 +31,6 @@ JAVA_GENS=gen/$(PACKAGE_DIR)/R.java
 
 JAVA_OBJS=$(subst .java,.class,$(subst java/,bin/,$(JAVA_SRCS)) $(subst gen/,bin/,$(JAVA_GENS)))
 JAVACFLAGS=-classpath $(ANDROID_PLATFORM)/android.jar:bin:externals/constraintlayout/java -bootclasspath "" -target 8 -source 8 -d 'bin'
-
-#TODO: find why there is this 30/31 folder
-#TODO: HACK: I just moved 31 content into parent...
-#LDFLAGS+=-L/home/paul/android/android-sdk/ndk/23.1.7779620/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/31/
 
 OBJS=src/activity.o src/game.o
 OBJS+=src/imgui_test.o
