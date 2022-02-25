@@ -19,7 +19,7 @@ public class NativeWrapper
     // Input
     public static native boolean dispatchKeyEvent(long handle, KeyEvent keyEvent, int keyCode, int unicodeChar, int action);
     public static native boolean dispatchTouchEvent(long handle, MotionEvent motionEvent, int x, int y, int action);
-
+    
     // Surface lifecycle
     public static native void surfaceCreated(long handle, Surface s);
     public static native void surfaceChanged(long handle, int format, int width, int height);

@@ -7,7 +7,11 @@ PACKAGE_DIR=$(subst .,/,$(PACKAGE))
 FINAL_APK=app.apk
 APK=$(FINAL_APK).unaligned
 
-TARGET_HOST=aarch64-linux-android31
+TARGET_HOST=aarch64-linux-android21
+ABI=arm64-v8a
+#TARGET_HOST=i686-linux-android21
+#ABI=x86
+
 CC=clang --target=$(TARGET_HOST)
 CXX=clang++ --target=$(TARGET_HOST)
 CFLAGS=-Wall -O0 -g -funwind-tables -fPIC -fvisibility=hidden
@@ -17,7 +21,7 @@ CPPFLAGS=-MMD -Isrc -Iexternals/include
 LDFLAGS=-Wl,--no-undefined
 LDLIBS=-llog -landroid -lGLESv3 -lEGL -lm -static-libstdc++
 
-FILES_TO_ZIP=lib/arm64-v8a/libapp.so classes.dex
+FILES_TO_ZIP=lib/$(ABI)/libapp.so classes.dex
 FILES_TO_ZIP_FLAGS=$(addsuffix .zipped_to_apk,$(FILES_TO_ZIP))
 
 RESOURCES=res/values/strings.xml res/values/style.xml res/layout/activity_main.xml
@@ -34,13 +38,13 @@ JAVACFLAGS=-classpath $(ANDROID_PLATFORM)/android.jar:bin:externals/constraintla
 
 OBJS=src/activity.o src/game.o
 OBJS+=src/imgui_test.o
+OBJS+=src/imgui_impl_android.o src/imgui_impl_opengl3.o
 OBJS+=externals/src/gles2.o externals/src/egl.o
 OBJS+=externals/src/imgui.o externals/src/imgui_draw.o externals/src/imgui_tables.o externals/src/imgui_widgets.o
-OBJS+=externals/src/imgui_impl_android.o externals/src/imgui_impl_opengl3.o
 OBJS+=externals/src/imgui_demo.o
 DEPS=$(OBJS:.o=.d)
 
-BINARIES=lib/arm64-v8a/libapp.so
+BINARIES=lib/$(ABI)/libapp.so
 
 .DELETE_ON_ERROR:
 
@@ -50,7 +54,7 @@ all: $(FINAL_APK)
 
 -include $(DEPS)
 
-bin gen lib/arm64-v8a:
+bin gen lib/$(ABI):
 	mkdir -p $@
 
 src/%.o: src/%.c
@@ -63,7 +67,7 @@ src/%.o: src/%.cpp
 	touch $@
 	zip -u $(APK) $<
 
-lib/arm64-v8a/libapp.so: $(OBJS) | lib/arm64-v8a
+lib/$(ABI)/libapp.so: $(OBJS) | lib/$(ABI)
 	$(CXX) -shared $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
 	llvm-strip $@
 
@@ -85,11 +89,11 @@ $(APK): res_compiled.zip AndroidManifest.xml
 	aapt2 link res_compiled.zip -o $(APK) -I $(ANDROID_PLATFORM)/android.jar -A assets --java gen --manifest AndroidManifest.xml
 
 $(FINAL_APK): $(APK) res_compiled.zip AndroidManifest.xml $(FILES_TO_ZIP_FLAGS)
-	jarsigner -keystore debug.keystore -storepass 'android' $(APK) androiddebugkey
-	zipalign -f 4 $(APK) $@
+	zipalign -f 4 $(APK) $@.aligned
+	apksigner sign --min-sdk-version 21 --max-sdk-version 32 --ks debug.keystore --ks-pass pass:android --in $@.aligned --out $@
 
 clean:
-	rm -rf gen bin lib classes.dex $(FILES_TO_ZIP_FLAGS) $(APK) $(FINAL_APK) res_compiled.zip
+	rm -rf gen bin lib classes.dex $(FILES_TO_ZIP_FLAGS) $(APK) $(FINAL_APK) $(FINAL_APK).aligned $(FINAL_APK).idsig res_compiled.zip
 	rm -rf $(OBJS) $(DEPS) debug-executable
 
 install: $(FINAL_APK)
@@ -114,3 +118,6 @@ log:
 killall:
 	-adb shell run-as $(PACKAGE) killall gdbserver
 	-adb shell run-as $(PACKAGE) killall $(PACKAGE)
+
+debug.keystore:
+	keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000

@@ -15,6 +15,7 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
+import android.view.InputQueue;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -25,6 +26,7 @@ import java.io.File;
 import android.app.AlertDialog;
 import android.app.AlertDialog.Builder;
 
+// Inspiration: https://github.com/aosp-mirror/platform_frameworks_base/blob/master/core/java/android/app/NativeActivity.java
 public class NativeActivity extends Activity implements SurfaceHolder.Callback
 {
     static

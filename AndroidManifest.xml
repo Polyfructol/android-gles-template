@@ -6,8 +6,11 @@
 		android:versionName="1.0"
 		android:installLocation="auto">
 
-	<uses-sdk android:minSdkVersion="29" android:targetSdkVersion="29" android:compileSdkVersion="30" />
-	<uses-feature android:glEsVersion="0x00030001" android:required="true" />
+	<uses-sdk 
+			android:minSdkVersion="21"
+			android:targetSdkVersion="32" />
+		
+	<uses-feature android:glEsVersion="0x00030000" android:required="true" />
 
 	<!-- Internet needed for gdb-server -->
 	<uses-permission android:name="android.permission.INTERNET" />
@@ -18,6 +21,7 @@
 			android:debuggable="true">
 		<activity
 				android:name="com.example.app.NativeActivity"
+            	android:exported="true"
 				android:theme="@style/NativeActivity"
 				android:launchMode="singleTask"
 				android:screenOrientation="fullSensor" 

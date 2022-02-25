@@ -8,7 +8,6 @@
 
 // Basic Android Lifecycle Recommendations : https://docs.nvidia.com/tegra/Content/AN_LC_Common_Steps_When.html
 #include <android/native_window_jni.h> // for native window JNI
-#include <android/input.h>
 
 #include <glad/egl.h>
 #include <glad/gles2.h>
@@ -208,7 +207,7 @@ static bool egl_Init(EGL* egl)
 
     EGLint contextAttribs[] = { 
         EGL_CONTEXT_CLIENT_VERSION, 3, // gles version
-        EGL_CONTEXT_OPENGL_DEBUG,   1,
+        //EGL_CONTEXT_OPENGL_DEBUG,   1,
         EGL_NONE 
     };
     egl->context = eglCreateContext(egl->display, egl->config, NULL, contextAttribs);
@@ -632,13 +631,14 @@ Java_com_example_app_NativeWrapper_dispatchKeyEvent(JNIEnv* jniEnv, jobject obj,
         .type = EventType_DispatchKeyEvent,
         .dispatchKeyEvent = 
         {
-            .nativeEvent = AKeyEvent_fromJava(jniEnv, keyEvent),
+            .nativeEvent = NULL,
             .action = action,
             .keyCode = keyCode,
             .unicodeChar = unicodeChar,
             .resultPtr = &result,
         }
     }, true);
+
     return result;
 }
 
@@ -651,12 +651,27 @@ Java_com_example_app_NativeWrapper_dispatchTouchEvent(JNIEnv* jniEnv, jobject ob
         .type = EventType_DispatchTouchEvent,
         .dispatchTouchEvent = 
         {
-            .nativeEvent = AMotionEvent_fromJava(jniEnv, motionEvent),
+            .nativeEvent = NULL,
             .action = action,
             .x = x,
             .y = y,
         }
-    }, false);
+    }, true);
+
     return true; // Capture all touch events
 }
 
+
+JNIEXPORT void JNICALL
+Java_com_example_app_NativeWrapper_onInputQueueCreated(JNIEnv* jniEnv, jobject obj, jlong handle, jlong inputQueue)
+{
+    ALOGV("Java_com_example_app_NativeWrapper_onInputQueueCreated()");
+
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_app_NativeWrapper_onInputQueueDestroyed(JNIEnv* jniEnv, jobject obj, jlong handle, jlong inputQueue)
+{
+    ALOGV("Java_com_example_app_NativeWrapper_onInputQueueDestroyed()");
+
+}
