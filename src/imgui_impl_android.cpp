@@ -34,7 +34,6 @@
 
 // Android data
 static double                                   g_Time = 0.0;
-static ANativeWindow*                           g_Window;
 
 static ImGuiKey ImGui_ImplAndroid_KeyCodeToImGuiKey(int32_t key_code)
 {
@@ -236,14 +235,13 @@ int32_t ImGui_ImplAndroid_HandleInputEvent(const AInputEvent* input_event)
     return 0;
 }
 
-bool ImGui_ImplAndroid_Init(ANativeWindow* window)
+bool ImGui_ImplAndroid_Init()
 {
-    g_Window = window;
-    g_Time = 0.0;
-
     // Setup backend capabilities flags
     ImGuiIO& io = ImGui::GetIO();
     io.BackendPlatformName = "imgui_impl_android";
+
+    g_Time = 0.0;
 
     return true;
 }
@@ -255,16 +253,6 @@ void ImGui_ImplAndroid_Shutdown()
 void ImGui_ImplAndroid_NewFrame()
 {
     ImGuiIO& io = ImGui::GetIO();
-
-    // Setup display size (every frame to accommodate for window resizing)
-    int32_t window_width = ANativeWindow_getWidth(g_Window);
-    int32_t window_height = ANativeWindow_getHeight(g_Window);
-    int display_width = window_width;
-    int display_height = window_height;
-
-    io.DisplaySize = ImVec2((float)window_width, (float)window_height);
-    if (window_width > 0 && window_height > 0)
-        io.DisplayFramebufferScale = ImVec2((float)display_width / window_width, (float)display_height / window_height);
 
     // Setup time step
     struct timespec current_timespec;

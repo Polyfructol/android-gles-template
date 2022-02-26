@@ -24,6 +24,11 @@ typedef struct EGL
     EGLContext context;
     EGLConfig config;
     EGLSurface surface;
+    bool contextAttachmentLinkedToSurface;
+
+    void (*onContextAttachedFunc)(void*);
+    void (*onContextDetachedFunc)(void*);
+    void* userPtr;
 } EGL;
 
 typedef enum EventType
@@ -129,6 +134,7 @@ typedef struct AppThread
 typedef struct App
 {
     bool activityPaused;
+    bool canRender;
 
     EGL egl;
 
@@ -174,80 +180,10 @@ static void debugGLCallback(GLenum source, GLenum type, GLuint id, GLenum severi
     ALOGE("GL_DEBUG[%s] (source=0x%x, type=0x%x, id=0x%x) %s", severityStr, source, type, id, message);
 }
 
-static bool egl_Init(EGL* egl)
-{
-    ALOGV("egl_Init()");
-
-    // https://github.com/Dav1dde/glad/blob/42a246c2ec4deb4d6406eb43a163f1d672de3803/example/c/egl_x11/egl_x11.c#L51
-    // Glad load egl in two steps
-    // First step is to get enough to initialize egl
-    // Second step to be able to request the version string in order to choose the functions to load
-    assert(gladLoaderLoadEGL(NULL));
-
-    egl->display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    eglInitialize(egl->display, NULL, NULL);
-    ALOGV("EGL_CLIENT_APIS: %s", eglQueryString(egl->display, EGL_CLIENT_APIS));
-    ALOGV("EGL_VENDOR: %s",      eglQueryString(egl->display, EGL_VENDOR));
-    ALOGV("EGL_VERSION: %s",     eglQueryString(egl->display, EGL_VERSION));
-    ALOGV("EGL_EXTENSIONS: %s",  eglQueryString(egl->display, EGL_EXTENSIONS));
-
-    gladLoaderUnloadEGL();
-    assert(gladLoadEGL(egl->display, (GLADloadfunc)eglGetProcAddress));
-
-    EGLint attribs[] =
-    {
-        EGL_RED_SIZE,    8,
-        EGL_GREEN_SIZE,  8,
-        EGL_BLUE_SIZE,   8,
-        EGL_DEPTH_SIZE, 24,
-        EGL_NONE
-    };
-    EGLint numConfig;
-    eglChooseConfig(egl->display, attribs, &egl->config, 1, &numConfig);
-
-    EGLint contextAttribs[] = { 
-        EGL_CONTEXT_CLIENT_VERSION, 3, // gles version
-        //EGL_CONTEXT_OPENGL_DEBUG,   1,
-        EGL_NONE 
-    };
-    egl->context = eglCreateContext(egl->display, egl->config, NULL, contextAttribs);
-
-    eglMakeCurrent(egl->display, EGL_NO_SURFACE, EGL_NO_SURFACE, egl->context);
-    eglSwapInterval(egl->display, 1);
-
-    assert(gladLoadGLES2((GLADloadfunc)eglGetProcAddress));
-    ALOGV("GL_VERSION: %s", glGetString(GL_VERSION));
-    ALOGV("GL_VENDOR: %s", glGetString(GL_VENDOR));
-    ALOGV("GL_RENDERER: %s", glGetString(GL_RENDERER));
-    ALOGV("GL_SHADING_LANGUAGE_VERSION: %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
-    ALOGV("GL_KHR_debug: %d", GLAD_GL_KHR_debug);
-    ALOGV("GL_EXT_texture_filter_anisotropic: %d", GLAD_GL_EXT_texture_filter_anisotropic);
-
-    if (GLAD_GL_KHR_debug)
-    { 
-        glEnable(GL_DEBUG_OUTPUT_KHR);
-        glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS_KHR);
-        glDebugMessageCallbackKHR(debugGLCallback, NULL);
-    }
-
-    // List GL extensions
-    if (0)
-    {
-        int numExtensions;
-        glGetIntegerv(GL_NUM_EXTENSIONS, &numExtensions);
-        for (int i = 0; i < numExtensions; ++i)
-            ALOGV("%s", glGetStringi(GL_EXTENSIONS, i));
-    }
-
-    return true;
-}
-
-static void egl_Shutdown(EGL* egl)
+static void egl_Terminate(EGL* egl)
 {
     ALOGV("egl_Shutdown()");
-    eglDestroyContext(egl->display, egl->context);
     eglTerminate(egl->display);
-    ALOGV("egl_Shutdown() ended");
 }
 
 static void egl_DestroyAndUnbindSurface(EGL* egl)
@@ -255,20 +191,93 @@ static void egl_DestroyAndUnbindSurface(EGL* egl)
     ALOGV("egl_DestroyAndUnbindSurface()");
     eglDestroySurface(egl->display, egl->surface);
     eglMakeCurrent(egl->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    
     egl->surface = NULL;
 }
 
-static void egl_CreateAndBindSurface(EGL* egl, ANativeWindow* nativeWindow)
+static void egl_MakeCurrent(EGL* egl, ANativeWindow* nativeWindow)
 {
-    if (egl->surface != NULL)
-        egl_DestroyAndUnbindSurface(egl);
+    bool contextCreation = (egl->context == NULL);
+    if (contextCreation)
+    {
+        ALOGV("egl_CreateContext()");
+        
+        // https://github.com/Dav1dde/glad/blob/42a246c2ec4deb4d6406eb43a163f1d672de3803/example/c/egl_x11/egl_x11.c#L51
+        // Glad load egl in two steps
+        // First step is to get enough to initialize egl
+        // Second step to be able to request the version string in order to choose the functions to load
+        assert(gladLoaderLoadEGL(NULL));
 
-    ALOGV("egl_CreateAndBindSurface()");
-    
-    egl->surface = eglCreateWindowSurface(egl->display, egl->config, nativeWindow, NULL);
-    if (egl->surface == NULL)
-        ALOGV("eglCreateWindowSurface failed");
-    eglMakeCurrent(egl->display, egl->surface, egl->surface, egl->context);
+        egl->display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+        assert(egl->display);
+
+        eglInitialize(egl->display, NULL, NULL);
+        ALOGV("EGL_CLIENT_APIS: %s", eglQueryString(egl->display, EGL_CLIENT_APIS));
+        ALOGV("EGL_VENDOR: %s",      eglQueryString(egl->display, EGL_VENDOR));
+        ALOGV("EGL_VERSION: %s",     eglQueryString(egl->display, EGL_VERSION));
+        //ALOGV("EGL_EXTENSIONS: %s",  eglQueryString(egl->display, EGL_EXTENSIONS));
+
+        gladLoaderUnloadEGL();
+        assert(gladLoadEGL(egl->display, (GLADloadfunc)eglGetProcAddress));
+
+        EGLint attribs[] =
+        {
+            EGL_RED_SIZE,    8,
+            EGL_GREEN_SIZE,  8,
+            EGL_BLUE_SIZE,   8,
+            EGL_DEPTH_SIZE, 16,
+            EGL_NONE
+        };
+        EGLint numConfig;
+        eglChooseConfig(egl->display, attribs, &egl->config, 1, &numConfig);
+
+        EGLint contextAttribs[] = { 
+            EGL_CONTEXT_CLIENT_VERSION, 3, // gles version
+            EGL_NONE 
+        };
+        egl->context = eglCreateContext(egl->display, egl->config, NULL, contextAttribs);
+        assert(egl->context);
+    }
+
+    {
+        ALOGV("egl_CreateAndBindSurface()");
+        
+        egl->surface = eglCreateWindowSurface(egl->display, egl->config, nativeWindow, NULL);
+        assert(egl->surface);
+
+        eglMakeCurrent(egl->display, egl->surface, egl->surface, egl->context);
+    }
+
+    if (contextCreation)
+    {
+        ALOGV("egl_LoadGLFuncs()");
+
+        eglSwapInterval(egl->display, 1);
+
+        assert(gladLoadGLES2((GLADloadfunc)eglGetProcAddress));
+        ALOGV("GL_VERSION: %s", glGetString(GL_VERSION));
+        ALOGV("GL_VENDOR: %s", glGetString(GL_VENDOR));
+        ALOGV("GL_RENDERER: %s", glGetString(GL_RENDERER));
+        ALOGV("GL_SHADING_LANGUAGE_VERSION: %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
+        ALOGV("GL_KHR_debug: %d", GLAD_GL_KHR_debug);
+        ALOGV("GL_EXT_texture_filter_anisotropic: %d", GLAD_GL_EXT_texture_filter_anisotropic);
+
+        if (GLAD_GL_KHR_debug)
+        { 
+            glEnable(GL_DEBUG_OUTPUT_KHR);
+            glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS_KHR);
+            glDebugMessageCallbackKHR(debugGLCallback, NULL);
+        }
+
+        // List GL extensions
+        if (0)
+        {
+            int numExtensions;
+            glGetIntegerv(GL_NUM_EXTENSIONS, &numExtensions);
+            for (int i = 0; i < numExtensions; ++i)
+                ALOGV("%s", glGetStringi(GL_EXTENSIONS, i));
+        }
+    }
 }
 
 static void nativeActivity_Register(JNIEnv* env, NativeActivity* activity)
@@ -348,6 +357,20 @@ static bool filterLogEvents(EventType type)
         || type == EventType_DispatchTouchEvent;
 }
 
+static void onContextAttached(void* userPtr)
+{
+    App* app = userPtr;
+    game_LoadGPUData(app->game);
+    test_LoadGPUData(app->imguiTest);
+}
+
+static void onContextDetached(void* userPtr)
+{
+    App* app = userPtr;
+    test_UnloadGPUData(app->imguiTest);
+    game_UnloadGPUData(app->game);
+}
+
 static bool appThread_HandleEvents(AppThread* appThread, App* app)
 {
     static int eventIndex = 0; // For debug purpose
@@ -355,7 +378,7 @@ static bool appThread_HandleEvents(AppThread* appThread, App* app)
     // Thread sleep if activity is paused or there is no surface attached
     // TODO: Maybe we can only wait until a surface is created
     Event event;
-    while (appThread_PollEvent(appThread, &event, (app->activityPaused || app->egl.surface == NULL)))
+    while (appThread_PollEvent(appThread, &event, (app->activityPaused || !app->canRender)))
     {
         if (!filterLogEvents(event.type))
             ALOGV("Handle event[%d] %s ()", eventIndex, eventTypeStr[event.type]);
@@ -363,17 +386,18 @@ static bool appThread_HandleEvents(AppThread* appThread, App* app)
         switch (event.type)
         {
             case EventType_Create:
-                egl_Init(&app->egl);
                 app->game = game_Init();
                 app->imguiTest = test_Init();
-                game_LoadGPUData(app->game);
+
                 break;
 
             case EventType_Destroy:
-                egl_Shutdown(&app->egl);
-                test_Shutdown(app->imguiTest);
                 game_UnloadGPUData(app->game);
-                game_Destroy(app->game);
+                test_UnloadGPUData(app->imguiTest);
+                eglTerminate(app->egl.display);
+
+                test_Terminate(app->imguiTest);
+                game_Terminate(app->game);
                 return false;
 
             case EventType_Start:
@@ -383,18 +407,28 @@ static bool appThread_HandleEvents(AppThread* appThread, App* app)
                 break;
 
             case EventType_SurfaceCreated:
-                egl_CreateAndBindSurface(&app->egl, event.surfaceCreated.nativeWindow);
-                test_Load(app->imguiTest, event.surfaceCreated.nativeWindow);
+                {
+                    bool onContextCreation = (app->egl.context == NULL);
+                    egl_MakeCurrent(&app->egl, event.surfaceCreated.nativeWindow);
+
+                    if (onContextCreation)
+                    {
+                        game_LoadGPUData(app->game);
+                        test_LoadGPUData(app->imguiTest);
+                    }
+                }
                 break;
 
             case EventType_SurfaceChanged:
                 app->gameInputs.displayWidth = event.surfaceChanged.width;
                 app->gameInputs.displayHeight = event.surfaceChanged.height;
+                test_SizeChanged(event.surfaceChanged.width, event.surfaceChanged.height);
+                app->canRender = true;
                 break;
 
             case EventType_SurfaceDestroyed:
-                test_Unload(app->imguiTest);
                 egl_DestroyAndUnbindSurface(&app->egl);
+                app->canRender = false;
                 break;
 
             case EventType_Resume:
@@ -409,13 +443,13 @@ static bool appThread_HandleEvents(AppThread* appThread, App* app)
                 break;
 
             case EventType_DispatchKeyEvent:
-                test_HandleEvent(app->imguiTest, event.dispatchKeyEvent.nativeEvent);
+                //test_HandleEvent(app->imguiTest, event.dispatchKeyEvent.nativeEvent);
                 if (event.dispatchKeyEvent.unicodeChar != 0)
                     test_InputUnicodeChar(app->imguiTest, event.dispatchKeyEvent.unicodeChar);
                 break;
 
             case EventType_DispatchTouchEvent:
-                test_HandleEvent(app->imguiTest, event.dispatchTouchEvent.nativeEvent);
+                //test_HandleEvent(app->imguiTest, event.dispatchTouchEvent.nativeEvent);
                 app->gameInputs.touchX = event.dispatchTouchEvent.x;
                 app->gameInputs.touchY = event.dispatchTouchEvent.y;
 
@@ -451,6 +485,7 @@ static void* appThread_Func(void* arg)
         assert(app->imguiTest);
         {
             ImGuiTestIO* io = test_GetIO(app->imguiTest);
+            
             test_UpdateAndDraw(app->imguiTest);
             if (io->showKeyboard)
             {
@@ -585,7 +620,7 @@ Java_com_example_app_NativeWrapper_surfaceCreated(JNIEnv* jniEnv, jobject obj, j
         .type = EventType_SurfaceCreated,
         .surfaceCreated = {
             .nativeWindow = appThread->nativeWindow
-        }}, false);
+        }}, true);
 }
 
 JNIEXPORT void JNICALL

@@ -294,6 +294,15 @@ GLuint gl_CreateProgram(int shaderCount, ShaderDesc* shaderDescs)
 
     glLinkProgram(program);
 
+    GLint linkStatus;
+    glGetProgramiv(program, GL_LINK_STATUS, &linkStatus);
+    if (linkStatus == GL_FALSE)
+    {
+        char infolog[1024];
+        glGetProgramInfoLog(program, ARRAYSIZE(infolog), NULL, infolog);
+        ALOGE("Program error: %s\n", infolog);
+    }
+
     for (int i = 0; i < shaderCount; ++i)
         glDeleteShader(shaders[i]);
 
@@ -339,9 +348,9 @@ Game* game_Init()
     return game;
 }
 
-void game_Destroy(Game* game)
+void game_Terminate(Game* game)
 {
-    ALOGV("game_Destroy");
+    ALOGV("Terminate");
     free(game);
 }
 

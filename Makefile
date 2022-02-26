@@ -69,10 +69,12 @@ src/%.o: src/%.cpp
 
 lib/$(ABI)/libapp.so: $(OBJS) | lib/$(ABI)
 	$(CXX) -shared $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) $^ $(LDLIBS) -o $@
-	llvm-strip $@
+#llvm-strip $@
 
 # Explicitly list java dependencies
 bin/$(PACKAGE_DIR)/NativeActivity.class: java/$(PACKAGE_DIR)/NativeWrapper.java
+
+gen/$(PACKAGE_DIR)/R.java: $(APK)
 
 bin/$(PACKAGE_DIR)/R.class: gen/$(PACKAGE_DIR)/R.java | bin
 	javac -classpath "$(ANDROID_PLATFORM)/android.jar" -sourcepath 'src:gen' -target 1.8 -source 1.8 -d 'bin' $<

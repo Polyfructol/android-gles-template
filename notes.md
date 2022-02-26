@@ -83,3 +83,7 @@ nothing will happen until onSurfaceCreated is created again
 - onTrimMemory (TODO) https://developer.android.com/games/optimize/memory-allocation
 unloadGPUData
 unloadCPUData
+
+
+## Multiple devices
+ANDROID_SERIAL=emulator-5554 make run

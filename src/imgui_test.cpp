@@ -32,8 +32,16 @@ ImGuiTest* test_Init()
     
     ImGui::GetStyle().ScaleAllSizes(3.0f);
 
-    ImGui_ImplOpenGL3_Init("#version 300 es");
+    ImGui_ImplAndroid_Init();
     return self;
+}
+
+void test_Terminate(ImGuiTest* self)
+{
+    ImGui_ImplAndroid_Shutdown();
+    ImGui::DestroyContext();
+
+    delete self;
 }
 
 ImGuiTestIO* test_GetIO(ImGuiTest* self)
@@ -41,14 +49,20 @@ ImGuiTestIO* test_GetIO(ImGuiTest* self)
     return &self->io;
 }
 
-void test_Load(ImGuiTest* self, ANativeWindow* window)
+void test_LoadGPUData(ImGuiTest* self)
 {
-    ImGui_ImplAndroid_Init(window);
+    ImGui_ImplOpenGL3_Init("#version 300 es");
 }
 
-void test_Unload(ImGuiTest* self)
+void test_UnloadGPUData(ImGuiTest* self)
 {
-    ImGui_ImplAndroid_Shutdown();
+    ImGui_ImplOpenGL3_Shutdown();
+}
+
+void test_SizeChanged(float width, float height)
+{
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = { width, height };
 }
 
 void test_HandleEvent(ImGuiTest* self, const AInputEvent* inputEvent)
@@ -89,12 +103,4 @@ void test_UpdateAndDraw(ImGuiTest* self)
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     self->prevIO = self->io;
-}
-
-void test_Shutdown(ImGuiTest* self)
-{
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui::DestroyContext();
-
-    delete self;
 }
