@@ -12,7 +12,10 @@
 #include <glad/egl.h>
 #include <glad/gles2.h>
 
+#define PACKAGE_PATH "com/example/app"
+
 #include "common.h"
+#include "event.h"
 
 #include "game.h"
 
@@ -24,11 +27,6 @@ typedef struct EGL
     EGLContext context;
     EGLConfig config;
     EGLSurface surface;
-    bool contextAttachmentLinkedToSurface;
-
-    void (*onContextAttachedFunc)(void*);
-    void (*onContextDetachedFunc)(void*);
-    void* userPtr;
 } EGL;
 
 typedef enum EventType
@@ -41,7 +39,7 @@ typedef enum EventType
     EventType_Pause,
     EventType_WindowFocusChanged,
     EventType_DispatchKeyEvent,
-    EventType_DispatchTouchEvent,
+    EventType_DispatchMotionEvent,
     EventType_SurfaceCreated,
     EventType_SurfaceChanged,
     EventType_SurfaceDestroyed,
@@ -74,22 +72,8 @@ typedef struct Event
             bool hasFocus;
         } windowFocusChanged;
 
-        struct DispatchKeyEvent
-        {
-            const AInputEvent* nativeEvent;
-            int action;
-            int keyCode;
-            int unicodeChar;
-            bool* resultPtr;
-        } dispatchKeyEvent;
-        
-        struct DispatchTouchEvent
-        {
-            const AInputEvent* nativeEvent;
-            int action;
-            int x;
-            int y;
-        } dispatchTouchEvent;
+        InputEvent dispatchKeyEvent;
+        InputEvent dispatchTouchEvent;
 
         struct SurfaceCreated
         {
@@ -105,21 +89,46 @@ typedef struct Event
     };
 } Event;
 
-typedef struct NativeActivity
+typedef struct NativeActivityProto
 {
     jclass clazz;
     jobject object;
     jmethodID showSoftInput;
     jmethodID hideSoftInput;
     jmethodID vibrate;
-} NativeActivity;
+} NativeActivityProto;
+
+typedef struct KeyEventProto
+{
+    jclass clazz;
+    jfieldID action;
+    jfieldID keyCode;
+    jfieldID scanCode;
+    jfieldID unicodeChar;
+    jfieldID metaState;
+} KeyEventProto;
+
+typedef struct MotionEventProto
+{
+    jclass clazz;
+    jfieldID action;
+    jfieldID x;
+    jfieldID y;
+} MotionEventProto;
+
+typedef struct JavaClasses
+{
+    NativeActivityProto nativeActivity;
+    KeyEventProto keyEvent;
+    MotionEventProto motionEvent;
+} JavaClasses;
 
 typedef struct AppThread
 {
     pthread_t thread;
     JavaVM* javaVM;
     JNIEnv* jniEnv;
-    NativeActivity activity;
+    JavaClasses javaClasses;
 
     ANativeWindow* nativeWindow;
 
@@ -280,27 +289,73 @@ static void egl_MakeCurrent(EGL* egl, ANativeWindow* nativeWindow)
     }
 }
 
-static void nativeActivity_Register(JNIEnv* env, NativeActivity* activity)
+static void nativeActivity_ShowSoftInput(JNIEnv* env, const NativeActivityProto* proto)
 {
-    activity->clazz = (*env)->GetObjectClass(env, activity->object);
-    activity->showSoftInput = (*env)->GetMethodID(env, activity->clazz, "showSoftInput", "()V");
-    activity->hideSoftInput = (*env)->GetMethodID(env, activity->clazz, "hideSoftInput", "()V");
-    activity->vibrate = (*env)->GetMethodID(env, activity->clazz, "vibrate", "(I)V");
+    (*env)->CallVoidMethod(env, proto->object, proto->showSoftInput);
 }
 
-static void nativeActivity_ShowSoftInput(JNIEnv* env, const NativeActivity* activity)
+static void nativeActivity_HideSoftInput(JNIEnv* env, const NativeActivityProto* proto)
 {
-    (*env)->CallVoidMethod(env, activity->object, activity->showSoftInput);
+    (*env)->CallVoidMethod(env, proto->object, proto->hideSoftInput);
 }
 
-static void nativeActivity_HideSoftInput(JNIEnv* env, const NativeActivity* activity)
+static void nativeActivity_Vibrate(JNIEnv* env, const NativeActivityProto* proto, int effectId)
 {
-    (*env)->CallVoidMethod(env, activity->object, activity->hideSoftInput);
+    (*env)->CallVoidMethod(env, proto->object, proto->vibrate, effectId);
 }
 
-static void nativeActivity_Vibrate(JNIEnv* env, const NativeActivity* activity, int effectId)
+static void nativeActivity_Register(JNIEnv* env, NativeActivityProto* proto)
 {
-    (*env)->CallVoidMethod(env, activity->object, activity->vibrate, effectId);
+    assert(proto->object);
+    proto->clazz = (*env)->GetObjectClass(env, proto->object);
+    proto->showSoftInput = (*env)->GetMethodID(env, proto->clazz, "showSoftInput", "()V");
+    proto->hideSoftInput = (*env)->GetMethodID(env, proto->clazz, "hideSoftInput", "()V");
+    proto->vibrate = (*env)->GetMethodID(env, proto->clazz, "vibrate", "(I)V");
+}
+
+static void keyEvent_Register(JNIEnv* env, KeyEventProto* proto)
+{
+    proto->clazz = (*env)->FindClass(env, PACKAGE_PATH "/NativeWrapper$KeyEvent");
+    proto->action = (*env)->GetFieldID(env, proto->clazz, "action", "I");
+    proto->keyCode = (*env)->GetFieldID(env, proto->clazz, "keyCode", "I");
+    proto->scanCode = (*env)->GetFieldID(env, proto->clazz, "scanCode", "I");
+    proto->unicodeChar = (*env)->GetFieldID(env, proto->clazz, "unicodeChar", "I");
+    proto->metaState = (*env)->GetFieldID(env, proto->clazz, "metaState", "I");
+}
+
+static InputEvent keyEvent_FromJava(JNIEnv* env, KeyEventProto* proto, jobject object)
+{
+    InputEvent event = { AINPUT_EVENT_TYPE_KEY };
+    event.keyEvent.action = (*env)->GetIntField(env, object, proto->action);
+    event.keyEvent.keyCode = (*env)->GetIntField(env, object, proto->keyCode);
+    event.keyEvent.scanCode = (*env)->GetIntField(env, object, proto->scanCode);
+    event.keyEvent.unicodeChar = (*env)->GetIntField(env, object, proto->unicodeChar);
+    event.keyEvent.metaState = (*env)->GetIntField(env, object, proto->metaState);
+    return event;
+}
+
+static void motionEvent_Register(JNIEnv* env, MotionEventProto* proto)
+{
+    proto->clazz = (*env)->FindClass(env, PACKAGE_PATH "/NativeWrapper$MotionEvent");
+    proto->action = (*env)->GetFieldID(env, proto->clazz, "action", "I");
+    proto->x = (*env)->GetFieldID(env, proto->clazz, "x", "I");
+    proto->y = (*env)->GetFieldID(env, proto->clazz, "y", "I");
+}
+
+static InputEvent motionEvent_FromJava(JNIEnv* env, MotionEventProto* proto, jobject object)
+{
+    InputEvent event = { AINPUT_EVENT_TYPE_MOTION };
+    event.motionEvent.x = (*env)->GetIntField(env, object, proto->x);
+    event.motionEvent.y = (*env)->GetIntField(env, object, proto->y);
+    event.motionEvent.action = (*env)->GetIntField(env, object, proto->action);
+    return event;
+}
+
+static void javaClasses_Register(JNIEnv* env, JavaClasses* classes)
+{
+    nativeActivity_Register(env, &classes->nativeActivity);
+    keyEvent_Register(env, &classes->keyEvent);
+    motionEvent_Register(env, &classes->motionEvent);
 }
 
 static bool appThread_PollEvent(AppThread* appThread, Event* event, bool waitForEvent)
@@ -354,21 +409,7 @@ static bool filterLogEvents(EventType type)
 {
     return true;
     return type == EventType_DispatchKeyEvent
-        || type == EventType_DispatchTouchEvent;
-}
-
-static void onContextAttached(void* userPtr)
-{
-    App* app = userPtr;
-    game_LoadGPUData(app->game);
-    test_LoadGPUData(app->imguiTest);
-}
-
-static void onContextDetached(void* userPtr)
-{
-    App* app = userPtr;
-    test_UnloadGPUData(app->imguiTest);
-    game_UnloadGPUData(app->game);
+        || type == EventType_DispatchMotionEvent;
 }
 
 static bool appThread_HandleEvents(AppThread* appThread, App* app)
@@ -443,17 +484,17 @@ static bool appThread_HandleEvents(AppThread* appThread, App* app)
                 break;
 
             case EventType_DispatchKeyEvent:
-                //test_HandleEvent(app->imguiTest, event.dispatchKeyEvent.nativeEvent);
-                if (event.dispatchKeyEvent.unicodeChar != 0)
-                    test_InputUnicodeChar(app->imguiTest, event.dispatchKeyEvent.unicodeChar);
+                test_HandleEvent(app->imguiTest, &event.dispatchKeyEvent);
+                if (event.dispatchKeyEvent.keyEvent.unicodeChar != 0)
+                    test_InputUnicodeChar(app->imguiTest, event.dispatchKeyEvent.keyEvent.unicodeChar);
                 break;
 
-            case EventType_DispatchTouchEvent:
-                //test_HandleEvent(app->imguiTest, event.dispatchTouchEvent.nativeEvent);
-                app->gameInputs.touchX = event.dispatchTouchEvent.x;
-                app->gameInputs.touchY = event.dispatchTouchEvent.y;
+            case EventType_DispatchMotionEvent:
+                test_HandleEvent(app->imguiTest, &event.dispatchTouchEvent);
+                app->gameInputs.touchX = event.dispatchTouchEvent.motionEvent.x;
+                app->gameInputs.touchY = event.dispatchTouchEvent.motionEvent.y;
 
-                //ALOGV("Touch pressed: %d %d %d", event.dispatchTouchEvent.x, event.dispatchTouchEvent.y, event.dispatchTouchEvent.action);
+                //ALOGV("Touch pressed: %d %d %d", event.dispatchTouchEvent.motionEvent.x, event.dispatchTouchEvent.motionEvent.y, event.dispatchTouchEvent.motionEvent.action);
                 break;
             default:;
         }
@@ -469,9 +510,6 @@ static void* appThread_Func(void* arg)
 
     // Init thread related data
     (*appThread->javaVM)->AttachCurrentThread(appThread->javaVM, &appThread->jniEnv, NULL);
-
-    // Register NativeActivity wrapper
-    nativeActivity_Register(appThread->jniEnv, &appThread->activity);
 
     App* app = calloc(1, sizeof(App));
     int frameIndex = 0;
@@ -489,12 +527,12 @@ static void* appThread_Func(void* arg)
             test_UpdateAndDraw(app->imguiTest);
             if (io->showKeyboard)
             {
-                nativeActivity_Vibrate(appThread->jniEnv, &appThread->activity, 2);
-                nativeActivity_ShowSoftInput(appThread->jniEnv, &appThread->activity);
+                nativeActivity_Vibrate(appThread->jniEnv, &appThread->javaClasses.nativeActivity, 2);
+                nativeActivity_ShowSoftInput(appThread->jniEnv, &appThread->javaClasses.nativeActivity);
             }
             if (io->hideKeyboard)
             {
-                nativeActivity_HideSoftInput(appThread->jniEnv, &appThread->activity);
+                nativeActivity_HideSoftInput(appThread->jniEnv, &appThread->javaClasses.nativeActivity);
             }    
         }
 
@@ -522,21 +560,22 @@ Java_com_example_app_NativeWrapper_onCreate(JNIEnv* jniEnv, jobject obj, jobject
 
     AppThread* appThread = calloc(1, sizeof(AppThread));
     (*jniEnv)->GetJavaVM(jniEnv, &appThread->javaVM);
-    appThread->activity.object = (*jniEnv)->NewGlobalRef(jniEnv, activity);
 
-    pthread_mutex_init(&appThread->mutex, NULL);
-    pthread_cond_init(&appThread->eventAddedCond, NULL);
-    pthread_cond_init(&appThread->allEventsProcessed, NULL);
+    appThread->javaClasses.nativeActivity.object = (*jniEnv)->NewGlobalRef(jniEnv, activity);
+    javaClasses_Register(jniEnv, &appThread->javaClasses);
 
-    pthread_create(&appThread->thread, NULL, appThread_Func, appThread);
-
-    // Chdir to filesDir to be able to fopen copied files
     {
         const char* filesDirChars = (*jniEnv)->GetStringUTFChars(jniEnv, filesDir, NULL);
         ALOGV("chdir to '%s'", filesDirChars);
         chdir(filesDirChars);
         (*jniEnv)->ReleaseStringUTFChars(jniEnv, filesDir, filesDirChars);
     }
+
+    pthread_mutex_init(&appThread->mutex, NULL);
+    pthread_cond_init(&appThread->eventAddedCond, NULL);
+    pthread_cond_init(&appThread->allEventsProcessed, NULL);
+
+    pthread_create(&appThread->thread, NULL, appThread_Func, appThread);
 
     appThread_AddEvent(appThread, (Event){ EventType_Create }, true);
 
@@ -552,11 +591,11 @@ Java_com_example_app_NativeWrapper_onDestroy(JNIEnv* jniEnv, jobject obj, jlong 
     AppThread* appThread = (AppThread*)((size_t)handle);
     appThread_AddEvent(appThread, (Event){ EventType_Destroy }, true);
 
-    // We usually never reach this point because app is killed
+    // We usually never reach this point because app is killed before
 
     pthread_join(appThread->thread, NULL);
-    (*jniEnv)->DeleteGlobalRef(jniEnv, appThread->activity.object);
-    appThread->activity = (NativeActivity){};
+    (*jniEnv)->DeleteGlobalRef(jniEnv, appThread->javaClasses.nativeActivity.object);
+    appThread->javaClasses.nativeActivity = (NativeActivityProto){};
 
     pthread_mutex_destroy(&appThread->mutex);
     pthread_cond_destroy(&appThread->eventAddedCond);
@@ -657,56 +696,38 @@ Input
 */
 
 JNIEXPORT bool JNICALL
-Java_com_example_app_NativeWrapper_dispatchKeyEvent(JNIEnv* jniEnv, jobject obj, jlong handle, jobject keyEvent, int keyCode, int unicodeChar, int action)
+Java_com_example_app_NativeWrapper_dispatchKeyEvent(JNIEnv* jniEnv, jobject obj, jlong handle, jobject keyEvent)
 {
-    ALOGV("NativeWrapper::dispatchKeyEvent(%d, %d)", keyCode, action);
+    AppThread* appThread = (AppThread*)((size_t)handle);
+    InputEvent keyEventNative = keyEvent_FromJava(jniEnv, &appThread->javaClasses.keyEvent, keyEvent);
+    ALOGV("NativeWrapper::dispatchKeyEvent(%d, %d)", keyEventNative.keyEvent.keyCode, keyEventNative.keyEvent.action);
 
-    bool result = false;
-    appThread_AddEvent((AppThread*)((size_t)handle), (Event){
+    bool isHandled = false;
+    keyEventNative.isHandled = &isHandled;
+
+    appThread_AddEvent(appThread, (Event){
         .type = EventType_DispatchKeyEvent,
-        .dispatchKeyEvent = 
-        {
-            .nativeEvent = NULL,
-            .action = action,
-            .keyCode = keyCode,
-            .unicodeChar = unicodeChar,
-            .resultPtr = &result,
-        }
+        .dispatchKeyEvent = keyEventNative
     }, true);
 
-    return result;
+    return isHandled;
 }
 
 JNIEXPORT bool JNICALL
-Java_com_example_app_NativeWrapper_dispatchTouchEvent(JNIEnv* jniEnv, jobject obj, jlong handle, jobject motionEvent, int x, int y, int action)
+Java_com_example_app_NativeWrapper_dispatchTouchEvent(JNIEnv* jniEnv, jobject obj, jlong handle, jobject motionEvent)
 {
     //ALOGV("NativeWrapper::dispatchTouchEvent()");
+    AppThread* appThread = (AppThread*)((size_t)handle);
 
-    appThread_AddEvent((AppThread*)((size_t)handle), (Event){
-        .type = EventType_DispatchTouchEvent,
-        .dispatchTouchEvent = 
-        {
-            .nativeEvent = NULL,
-            .action = action,
-            .x = x,
-            .y = y,
-        }
+    InputEvent motionEventNative = motionEvent_FromJava(jniEnv, &appThread->javaClasses.motionEvent, motionEvent);
+
+    bool isHandled = true;
+    motionEventNative.isHandled = &isHandled;
+
+    appThread_AddEvent(appThread, (Event){
+        .type = EventType_DispatchMotionEvent,
+        .dispatchTouchEvent = motionEventNative,
     }, true);
 
-    return true; // Capture all touch events
-}
-
-
-JNIEXPORT void JNICALL
-Java_com_example_app_NativeWrapper_onInputQueueCreated(JNIEnv* jniEnv, jobject obj, jlong handle, jlong inputQueue)
-{
-    ALOGV("Java_com_example_app_NativeWrapper_onInputQueueCreated()");
-
-}
-
-JNIEXPORT void JNICALL
-Java_com_example_app_NativeWrapper_onInputQueueDestroyed(JNIEnv* jniEnv, jobject obj, jlong handle, jlong inputQueue)
-{
-    ALOGV("Java_com_example_app_NativeWrapper_onInputQueueDestroyed()");
-
+    return isHandled;
 }

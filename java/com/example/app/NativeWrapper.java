@@ -1,8 +1,8 @@
 package com.example.app;
 import android.app.Activity;
 import android.view.Surface;
-import android.view.KeyEvent;
-import android.view.MotionEvent;
+//import android.view.KeyEvent;
+//import android.view.MotionEvent;
 
 // Wrapper for native library
 public class NativeWrapper
@@ -16,9 +16,25 @@ public class NativeWrapper
     public static native void onPause(long handle);
     public static native void onWindowFocusChanged(long handle, boolean hasFocus);
 
+    static public class KeyEvent
+    {
+        int action;
+        int keyCode;
+        int scanCode;
+        int unicodeChar;
+        int metaState;
+    }
+
+    static public class MotionEvent
+    {
+        int action;
+        int x;
+        int y;
+    }
+
     // Input
-    public static native boolean dispatchKeyEvent(long handle, KeyEvent keyEvent, int keyCode, int unicodeChar, int action);
-    public static native boolean dispatchTouchEvent(long handle, MotionEvent motionEvent, int x, int y, int action);
+    public static native boolean dispatchKeyEvent(long handle, KeyEvent keyEvent);
+    public static native boolean dispatchTouchEvent(long handle, MotionEvent motionEvent);
     
     // Surface lifecycle
     public static native void surfaceCreated(long handle, Surface s);

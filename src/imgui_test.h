@@ -5,7 +5,7 @@ extern "C"
 {
 #endif
 
-typedef struct AInputEvent AInputEvent;
+typedef struct InputEvent InputEvent;
 
 typedef struct ImGuiTest ImGuiTest;
 
@@ -22,7 +22,7 @@ ImGuiTestIO* test_GetIO(ImGuiTest* self);
 void test_LoadGPUData(ImGuiTest* self);
 void test_UnloadGPUData(ImGuiTest* self);
 void test_SizeChanged(float width, float height);
-void test_HandleEvent(ImGuiTest*, const AInputEvent* event);
+void test_HandleEvent(ImGuiTest*, const InputEvent* event);
 void test_InputUnicodeChar(ImGuiTest* self, int unicodeChar);
 void test_UpdateAndDraw(ImGuiTest* self);
 

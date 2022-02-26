@@ -65,7 +65,7 @@ void test_SizeChanged(float width, float height)
     io.DisplaySize = { width, height };
 }
 
-void test_HandleEvent(ImGuiTest* self, const AInputEvent* inputEvent)
+void test_HandleEvent(ImGuiTest* self, const InputEvent* inputEvent)
 {
     ImGui_ImplAndroid_HandleInputEvent(inputEvent);
 }

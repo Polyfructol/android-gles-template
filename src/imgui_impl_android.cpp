@@ -24,13 +24,16 @@
 //  2022-01-10: Inputs: calling new io.AddKeyEvent(), io.AddKeyModsEvent() + io.SetKeyEventNativeData() API (1.87+). Support for full ImGuiKey range.
 //  2021-03-04: Initial version.
 
-#include "imgui.h"
-#include "imgui_impl_android.h"
 #include <time.h>
 #include <android/native_window.h>
 #include <android/input.h>
 #include <android/keycodes.h>
 #include <android/log.h>
+
+#include "event.h"
+
+#include "imgui.h"
+#include "imgui_impl_android.h"
 
 // Android data
 static double                                   g_Time = 0.0;
@@ -148,18 +151,17 @@ static ImGuiKey ImGui_ImplAndroid_KeyCodeToImGuiKey(int32_t key_code)
     }
 }
 
-int32_t ImGui_ImplAndroid_HandleInputEvent(const AInputEvent* input_event)
+int32_t ImGui_ImplAndroid_HandleInputEvent(const InputEvent* input_event)
 {
     ImGuiIO& io = ImGui::GetIO();
-    int32_t event_type = AInputEvent_getType(input_event);
-    switch (event_type)
+    switch (input_event->type)
     {
     case AINPUT_EVENT_TYPE_KEY:
     {
-        int32_t event_key_code = AKeyEvent_getKeyCode(input_event);
-        int32_t event_scan_code = AKeyEvent_getScanCode(input_event);
-        int32_t event_action = AKeyEvent_getAction(input_event);
-        int32_t event_meta_state = AKeyEvent_getMetaState(input_event);
+        int32_t event_key_code = input_event->keyEvent.keyCode;
+        int32_t event_scan_code = input_event->keyEvent.scanCode;
+        int32_t event_action = input_event->keyEvent.action;
+        int32_t event_meta_state = input_event->keyEvent.metaState;
 
         io.AddKeyEvent(ImGuiKey_ModCtrl,  (event_meta_state & AMETA_CTRL_ON)  != 0);
         io.AddKeyEvent(ImGuiKey_ModShift, (event_meta_state & AMETA_SHIFT_ON) != 0);
@@ -190,13 +192,14 @@ int32_t ImGui_ImplAndroid_HandleInputEvent(const AInputEvent* input_event)
     }
     case AINPUT_EVENT_TYPE_MOTION:
     {
-        int32_t event_action = AMotionEvent_getAction(input_event);
+        int32_t event_action = input_event->motionEvent.action;
         int32_t event_pointer_index = (event_action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
         event_action &= AMOTION_EVENT_ACTION_MASK;
         switch (event_action)
         {
         case AMOTION_EVENT_ACTION_DOWN:
         case AMOTION_EVENT_ACTION_UP:
+            /*
             // Physical mouse buttons (and probably other physical devices) also invoke the actions AMOTION_EVENT_ACTION_DOWN/_UP,
             // but we have to process them separately to identify the actual button pressed. This is done below via
             // AMOTION_EVENT_ACTION_BUTTON_PRESS/_RELEASE. Here, we only process "FINGER" input (and "UNKNOWN", as a fallback).
@@ -206,7 +209,11 @@ int32_t ImGui_ImplAndroid_HandleInputEvent(const AInputEvent* input_event)
                 io.AddMousePosEvent(AMotionEvent_getX(input_event, event_pointer_index), AMotionEvent_getY(input_event, event_pointer_index));
                 io.AddMouseButtonEvent(0, event_action == AMOTION_EVENT_ACTION_DOWN);
             }
+            */
+            io.AddMousePosEvent(input_event->motionEvent.x, input_event->motionEvent.y);
+            io.AddMouseButtonEvent(0, event_action == AMOTION_EVENT_ACTION_DOWN);
             break;
+            /*
         case AMOTION_EVENT_ACTION_BUTTON_PRESS:
         case AMOTION_EVENT_ACTION_BUTTON_RELEASE:
             {
@@ -216,13 +223,16 @@ int32_t ImGui_ImplAndroid_HandleInputEvent(const AInputEvent* input_event)
                 io.AddMouseButtonEvent(2, (button_state & AMOTION_EVENT_BUTTON_TERTIARY) != 0);
             }
             break;
+            */
         case AMOTION_EVENT_ACTION_HOVER_MOVE: // Hovering: Tool moves while NOT pressed (such as a physical mouse)
         case AMOTION_EVENT_ACTION_MOVE:       // Touch pointer moves while DOWN
-            io.AddMousePosEvent(AMotionEvent_getX(input_event, event_pointer_index), AMotionEvent_getY(input_event, event_pointer_index));
+            io.AddMousePosEvent(input_event->motionEvent.x, input_event->motionEvent.y);
             break;
+            /*
         case AMOTION_EVENT_ACTION_SCROLL:
             io.AddMouseWheelEvent(AMotionEvent_getAxisValue(input_event, AMOTION_EVENT_AXIS_HSCROLL, event_pointer_index), AMotionEvent_getAxisValue(input_event, AMOTION_EVENT_AXIS_VSCROLL, event_pointer_index));
             break;
+            */
         default:
             break;
         }

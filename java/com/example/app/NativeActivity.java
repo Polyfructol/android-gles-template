@@ -42,6 +42,10 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
     private InputMethodManager mInputMethodManager; // (show/hide)SoftInput
     private Vibrator mVibrator;
 
+    // Kept in cache to avoid micro allocation
+    private NativeWrapper.KeyEvent mKeyEvent = new NativeWrapper.KeyEvent();
+    private NativeWrapper.MotionEvent mMotionEvent = new NativeWrapper.MotionEvent();
+
     private void copyFile(InputStream in, OutputStream out) throws IOException
     {
         byte[] buffer = new byte[1024];
@@ -182,7 +186,13 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
         else if (event.getAction() == KeyEvent.ACTION_MULTIPLE && keyCode == 0)
             unicodeChar = event.getCharacters().charAt(0);
 
-        return NativeWrapper.dispatchKeyEvent(mNativeHandle, event, keyCode, unicodeChar, action) || super.dispatchKeyEvent(event);
+        mKeyEvent.action = action;
+        mKeyEvent.keyCode = keyCode;
+        mKeyEvent.scanCode = event.getScanCode();
+        mKeyEvent.unicodeChar = unicodeChar;
+        mKeyEvent.metaState = event.getMetaState();
+
+        return NativeWrapper.dispatchKeyEvent(mNativeHandle, mKeyEvent) || super.dispatchKeyEvent(event);
     }
     
     @Override
@@ -201,7 +211,11 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
             event.setLocation(x - offsets[0], y - offsets[1]);
         }
 
-        return NativeWrapper.dispatchTouchEvent(mNativeHandle, event, x, y, action) || super.dispatchTouchEvent(event);
+        mMotionEvent.action = action;
+        mMotionEvent.x = x;
+        mMotionEvent.y = y;
+
+        return NativeWrapper.dispatchTouchEvent(mNativeHandle, mMotionEvent) || super.dispatchTouchEvent(event);
     }
 
     public void showSoftInput()

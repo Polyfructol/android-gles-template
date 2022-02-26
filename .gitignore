@@ -1,6 +1,6 @@
 .vscode/settings.json
 
-*.zipped_to_apk
+*.flag
 
 gen/
 bin/

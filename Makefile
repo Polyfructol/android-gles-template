@@ -22,7 +22,7 @@ LDFLAGS=-Wl,--no-undefined
 LDLIBS=-llog -landroid -lGLESv3 -lEGL -lm -static-libstdc++
 
 FILES_TO_ZIP=lib/$(ABI)/libapp.so classes.dex
-FILES_TO_ZIP_FLAGS=$(addsuffix .zipped_to_apk,$(FILES_TO_ZIP))
+FILES_TO_ZIP_FLAGS=$(addsuffix .zipped_to_apk.flag,$(FILES_TO_ZIP))
 
 RESOURCES=res/values/strings.xml res/values/style.xml res/layout/activity_main.xml
 
@@ -63,7 +63,7 @@ src/%.o: src/%.c
 src/%.o: src/%.cpp
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
 
-%.zipped_to_apk: % | $(APK)
+%.zipped_to_apk.flag: % | $(APK)
 	touch $@
 	zip -u $(APK) $<
 
@@ -79,9 +79,13 @@ gen/$(PACKAGE_DIR)/R.java: $(APK)
 bin/$(PACKAGE_DIR)/R.class: gen/$(PACKAGE_DIR)/R.java | bin
 	javac -classpath "$(ANDROID_PLATFORM)/android.jar" -sourcepath 'src:gen' -target 1.8 -source 1.8 -d 'bin' $<
 
-classes.dex: $(JAVA_SRCS) | $(APK)
+java_compiled.flag: $(JAVA_SRCS) | $(APK)
 	javac $(JAVACFLAGS) $(JAVA_SRCS) $(JAVA_GENS)
-	d8 --no-desugaring --classpath bin $(JAVA_OBJS)
+	touch $@
+
+classes.dex: java_compiled.flag
+# Ugly hack to include nested classes (Class$Nested), and escape '$' character...
+	d8 --no-desugaring --classpath bin $(subst $$,\$$,$(shell find bin -name *.class))
 
 res_compiled.zip: $(RESOURCES)
 	aapt2 compile --dir res -o $@
@@ -95,7 +99,7 @@ $(FINAL_APK): $(APK) res_compiled.zip AndroidManifest.xml $(FILES_TO_ZIP_FLAGS)
 	apksigner sign --min-sdk-version 21 --max-sdk-version 32 --ks debug.keystore --ks-pass pass:android --in $@.aligned --out $@
 
 clean:
-	rm -rf gen bin lib classes.dex $(FILES_TO_ZIP_FLAGS) $(APK) $(FINAL_APK) $(FINAL_APK).aligned $(FINAL_APK).idsig res_compiled.zip
+	rm -rf gen bin lib classes.dex java_compiled.flag $(FILES_TO_ZIP_FLAGS) $(APK) $(FINAL_APK) $(FINAL_APK).aligned $(FINAL_APK).idsig res_compiled.zip
 	rm -rf $(OBJS) $(DEPS) debug-executable
 
 install: $(FINAL_APK)
