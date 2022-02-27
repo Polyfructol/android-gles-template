@@ -489,10 +489,8 @@ void game_UnloadGPUData(Game* game)
 void game_Update(Game* game, const GameInputs* inputs)
 {
     glEnable(GL_DEPTH_TEST);
-    glClearColor(0.2f, 0.2f, 0.2f, 1.f);
 
     glViewport(0, 0, inputs->displayWidth, inputs->displayHeight);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     float ratio = inputs->displayWidth / (float)inputs->displayHeight;
     float4x4 projection = mat4_perspective(TAU * 60.f / 360.f, ratio, 0.01f, 10.f);

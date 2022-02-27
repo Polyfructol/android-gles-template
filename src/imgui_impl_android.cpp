@@ -210,7 +210,7 @@ int32_t ImGui_ImplAndroid_HandleInputEvent(const InputEvent* input_event)
                 io.AddMouseButtonEvent(0, event_action == AMOTION_EVENT_ACTION_DOWN);
             }
             */
-            io.AddMousePosEvent(input_event->motionEvent.x, input_event->motionEvent.y);
+            io.AddMousePosEvent(input_event->motionEvent.x[0], input_event->motionEvent.y[0]);
             io.AddMouseButtonEvent(0, event_action == AMOTION_EVENT_ACTION_DOWN);
             break;
             /*
@@ -226,7 +226,7 @@ int32_t ImGui_ImplAndroid_HandleInputEvent(const InputEvent* input_event)
             */
         case AMOTION_EVENT_ACTION_HOVER_MOVE: // Hovering: Tool moves while NOT pressed (such as a physical mouse)
         case AMOTION_EVENT_ACTION_MOVE:       // Touch pointer moves while DOWN
-            io.AddMousePosEvent(input_event->motionEvent.x, input_event->motionEvent.y);
+            io.AddMousePosEvent(input_event->motionEvent.x[0], input_event->motionEvent.y[0]);
             break;
             /*
         case AMOTION_EVENT_ACTION_SCROLL:

@@ -14,6 +14,7 @@ typedef struct ImGuiTestIO
     // outputs
     bool showKeyboard;
     bool hideKeyboard;
+    bool disableVSYNCOnMotion;
 } ImGuiTestIO;
 
 ImGuiTest* test_Init();

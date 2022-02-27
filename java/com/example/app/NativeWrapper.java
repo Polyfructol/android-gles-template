@@ -27,9 +27,15 @@ public class NativeWrapper
 
     static public class MotionEvent
     {
+        MotionEvent()
+        {
+            x = new int[10];
+            y = new int[10];
+        }
         int action;
-        int x;
-        int y;
+        int pointerCount;
+        int x[];
+        int y[];
     }
 
     // Input

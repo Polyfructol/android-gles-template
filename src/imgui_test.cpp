@@ -4,6 +4,8 @@
 #include <imgui_impl_opengl3.h>
 #include <imgui_impl_android.h>
 
+#include "event.h"
+
 #include "imgui_test.h"
 
 struct ImGuiTest
@@ -13,6 +15,8 @@ struct ImGuiTest
 
     ImGuiTestIO io;
     ImGuiTestIO prevIO;
+
+    InputEvent lastMotionEvent;
 };
 
 ImGuiTest* test_Init()
@@ -68,6 +72,8 @@ void test_SizeChanged(float width, float height)
 void test_HandleEvent(ImGuiTest* self, const InputEvent* inputEvent)
 {
     ImGui_ImplAndroid_HandleInputEvent(inputEvent);
+    if (inputEvent->type == AINPUT_EVENT_TYPE_MOTION)
+        self->lastMotionEvent = *inputEvent;
 }
 
 void test_InputUnicodeChar(ImGuiTest* self, int unicodeChar)
@@ -97,7 +103,18 @@ void test_UpdateAndDraw(ImGuiTest* self)
     ImGui::Begin("Another Window");
     ImGui::Text("Hello from another window!");
     ImGui::Checkbox("Show demo window", &self->showDemoWindow);
+    ImGui::Checkbox("Test motion", &self->io.disableVSYNCOnMotion);
     ImGui::End();
+
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+
+    for (int i = 0; i < self->lastMotionEvent.motionEvent.pointerCount; ++i)
+    {
+        float x = self->lastMotionEvent.motionEvent.x[i];
+        float y = self->lastMotionEvent.motionEvent.y[i];
+        drawList->AddCircleFilled({ x, y }, 20.f, IM_COL32_WHITE);
+        drawList->AddCircle({ x, y }, 90.f, IM_COL32_WHITE);
+    }
 
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

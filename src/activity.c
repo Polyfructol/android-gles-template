@@ -21,6 +21,23 @@
 
 #include "imgui_test.h"
 
+
+#include <time.h>
+int64_t getNow()
+{
+    static bool init = false;
+    static int64_t startTime = 0;
+    if (!init)
+    {
+        init = true;
+        startTime = getNow();
+    }
+
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return ((t.tv_nsec + (t.tv_sec * 1000000000)) / 1000000) - startTime;
+}
+
 typedef struct EGL
 {
     EGLDisplay display;
@@ -112,6 +129,7 @@ typedef struct MotionEventProto
 {
     jclass clazz;
     jfieldID action;
+    jfieldID pointerCount;
     jfieldID x;
     jfieldID y;
 } MotionEventProto;
@@ -251,17 +269,21 @@ static void egl_MakeCurrent(EGL* egl, ANativeWindow* nativeWindow)
     {
         ALOGV("egl_CreateAndBindSurface()");
         
-        egl->surface = eglCreateWindowSurface(egl->display, egl->config, nativeWindow, NULL);
+        EGLint attribs[] =
+        {
+            EGL_RENDER_BUFFER, EGL_BACK_BUFFER,
+            EGL_NONE
+        };
+        egl->surface = eglCreateWindowSurface(egl->display, egl->config, nativeWindow, attribs);
         assert(egl->surface);
 
         eglMakeCurrent(egl->display, egl->surface, egl->surface, egl->context);
+        eglSwapInterval(egl->display, 1); // Add to be done each time (default to 1)
     }
 
     if (contextCreation)
     {
         ALOGV("egl_LoadGLFuncs()");
-
-        eglSwapInterval(egl->display, 1);
 
         assert(gladLoadGLES2((GLADloadfunc)eglGetProcAddress));
         ALOGV("GL_VERSION: %s", glGetString(GL_VERSION));
@@ -338,16 +360,28 @@ static void motionEvent_Register(JNIEnv* env, MotionEventProto* proto)
 {
     proto->clazz = (*env)->FindClass(env, PACKAGE_PATH "/NativeWrapper$MotionEvent");
     proto->action = (*env)->GetFieldID(env, proto->clazz, "action", "I");
-    proto->x = (*env)->GetFieldID(env, proto->clazz, "x", "I");
-    proto->y = (*env)->GetFieldID(env, proto->clazz, "y", "I");
+    proto->pointerCount = (*env)->GetFieldID(env, proto->clazz, "pointerCount", "I");
+    proto->x = (*env)->GetFieldID(env, proto->clazz, "x", "[I");
+    proto->y = (*env)->GetFieldID(env, proto->clazz, "y", "[I");
+}
+
+static void jni_FillIntArray(int* dst, int size, JNIEnv* env, jobject object, jfieldID field)
+{
+    jintArray intArrJava = (*env)->GetObjectField(env, object, field);
+    int* intArrNative = (*env)->GetIntArrayElements(env, intArrJava, NULL);
+    memcpy(dst, intArrNative, size * sizeof(int));
+    (*env)->ReleaseIntArrayElements(env, intArrJava, intArrNative, 0);
 }
 
 static InputEvent motionEvent_FromJava(JNIEnv* env, MotionEventProto* proto, jobject object)
 {
     InputEvent event = { AINPUT_EVENT_TYPE_MOTION };
-    event.motionEvent.x = (*env)->GetIntField(env, object, proto->x);
-    event.motionEvent.y = (*env)->GetIntField(env, object, proto->y);
+
+    event.motionEvent.pointerCount = (*env)->GetIntField(env, object, proto->pointerCount);
+    jni_FillIntArray(event.motionEvent.x, event.motionEvent.pointerCount, env, object, proto->x);
+    jni_FillIntArray(event.motionEvent.y, event.motionEvent.pointerCount, env, object, proto->y);
     event.motionEvent.action = (*env)->GetIntField(env, object, proto->action);
+
     return event;
 }
 
@@ -372,6 +406,7 @@ static bool appThread_PollEvent(AppThread* appThread, Event* event, bool waitFor
     bool result = false;
     if (appThread->eventCount > 0)
     {
+        // Pop front event
         *event = appThread->events[0];
         appThread->eventCount--;
         if (appThread->eventCount > 0)
@@ -490,9 +525,19 @@ static bool appThread_HandleEvents(AppThread* appThread, App* app)
                 break;
 
             case EventType_DispatchMotionEvent:
+
+                if (event.dispatchTouchEvent.type == AINPUT_EVENT_TYPE_MOTION)
                 test_HandleEvent(app->imguiTest, &event.dispatchTouchEvent);
-                app->gameInputs.touchX = event.dispatchTouchEvent.motionEvent.x;
-                app->gameInputs.touchY = event.dispatchTouchEvent.motionEvent.y;
+                app->gameInputs.touchX = event.dispatchTouchEvent.motionEvent.x[0];
+                app->gameInputs.touchY = event.dispatchTouchEvent.motionEvent.y[0];
+
+                if (test_GetIO(app->imguiTest)->disableVSYNCOnMotion)
+                {
+                    if (event.dispatchTouchEvent.motionEvent.action == AMOTION_EVENT_ACTION_DOWN)
+                        eglSwapInterval(app->egl.display, 0);
+                    if (event.dispatchTouchEvent.motionEvent.action == AMOTION_EVENT_ACTION_UP)
+                        eglSwapInterval(app->egl.display, 1);
+                }
 
                 //ALOGV("Touch pressed: %d %d %d", event.dispatchTouchEvent.motionEvent.x, event.dispatchTouchEvent.motionEvent.y, event.dispatchTouchEvent.motionEvent.action);
                 break;
@@ -537,7 +582,12 @@ static void* appThread_Func(void* arg)
         }
 
         eglSwapBuffers(app->egl.display, app->egl.surface);
+        
         frameIndex++;
+
+        // We should try to render everything that is not related to input before polling inputs
+        glClearColor(0.2f, 0.2f, 0.2f, 1.f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     }
 
     (*appThread->javaVM)->DetachCurrentThread(appThread->javaVM);
@@ -708,7 +758,7 @@ Java_com_example_app_NativeWrapper_dispatchKeyEvent(JNIEnv* jniEnv, jobject obj,
     appThread_AddEvent(appThread, (Event){
         .type = EventType_DispatchKeyEvent,
         .dispatchKeyEvent = keyEventNative
-    }, true);
+    }, false);
 
     return isHandled;
 }
@@ -727,7 +777,7 @@ Java_com_example_app_NativeWrapper_dispatchTouchEvent(JNIEnv* jniEnv, jobject ob
     appThread_AddEvent(appThread, (Event){
         .type = EventType_DispatchMotionEvent,
         .dispatchTouchEvent = motionEventNative,
-    }, true);
+    }, false);
 
     return isHandled;
 }

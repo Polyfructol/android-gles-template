@@ -20,8 +20,9 @@ typedef struct InputEvent
         struct 
         {
             int action;
-            int x;
-            int y;
+            int pointerCount;
+            int x[10];
+            int y[10];
         } motionEvent;
     };
 } InputEvent;

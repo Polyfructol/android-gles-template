@@ -212,8 +212,12 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
         }
 
         mMotionEvent.action = action;
-        mMotionEvent.x = x;
-        mMotionEvent.y = y;
+        mMotionEvent.pointerCount = event.getPointerCount();
+        for (int i = 0; i < mMotionEvent.pointerCount; ++i)
+        {
+            mMotionEvent.x[i] = (int)event.getX(i);
+            mMotionEvent.y[i] = (int)event.getY(i);
+        }
 
         return NativeWrapper.dispatchTouchEvent(mNativeHandle, mMotionEvent) || super.dispatchTouchEvent(event);
     }
