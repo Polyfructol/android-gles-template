@@ -7,8 +7,15 @@ import android.view.Surface;
 // Wrapper for native library
 public class NativeWrapper
 {
+    static public class Config
+    {
+        String filesDir;
+        int audioOutputSampleRate;
+        int audioOutputFramesPerBuffer;
+    }
+
     // Activity lifecycle
-    public static native long onCreate(Activity obj, String filesDir);
+    public static native long onCreate(Activity obj, Config config);
     public static native void onDestroy(long handle);
     public static native void onStart(long handle);
     public static native void onStop(long handle);

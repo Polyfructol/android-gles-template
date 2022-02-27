@@ -17,6 +17,8 @@
 #include "common.h"
 #include "event.h"
 
+#include "sound_device.h"
+
 #include "game.h"
 
 #include "imgui_test.h"
@@ -78,12 +80,24 @@ const char* eventTypeStr[] =
     "SurfaceDestroyed",
 };
 
+typedef struct Config
+{
+    char filesDir[256];
+    int audioOutputSampleRate;
+    int audioOutputFramesPerBuffer;
+} Config;
+
 typedef struct Event
 {
     EventType type;
 
     union
     {
+        struct Create
+        {
+            Config config;
+        } create;
+
         struct WindowFocusChanged
         {
             bool hasFocus;
@@ -115,6 +129,14 @@ typedef struct NativeActivityProto
     jmethodID vibrate;
 } NativeActivityProto;
 
+typedef struct ConfigProto
+{
+    jclass clazz;
+    jfieldID filesDir;
+    jfieldID audioOutputSampleRate;
+    jfieldID audioOutputFramesPerBuffer;
+} ConfigProto;
+
 typedef struct KeyEventProto
 {
     jclass clazz;
@@ -139,6 +161,7 @@ typedef struct JavaClasses
     NativeActivityProto nativeActivity;
     KeyEventProto keyEvent;
     MotionEventProto motionEvent;
+    ConfigProto config;
 } JavaClasses;
 
 typedef struct AppThread
@@ -165,6 +188,7 @@ typedef struct App
 
     EGL egl;
 
+    sound_device_t* soundDevice;
     Game* game;
     GameInputs gameInputs;
     ImGuiTest* imguiTest;
@@ -385,11 +409,35 @@ static InputEvent motionEvent_FromJava(JNIEnv* env, MotionEventProto* proto, job
     return event;
 }
 
+static void config_Register(JNIEnv* env, ConfigProto* proto)
+{
+    proto->clazz = (*env)->FindClass(env, PACKAGE_PATH "/NativeWrapper$Config");
+    proto->filesDir = (*env)->GetFieldID(env, proto->clazz, "filesDir", "Ljava/lang/String;");
+    proto->audioOutputSampleRate = (*env)->GetFieldID(env, proto->clazz, "audioOutputSampleRate", "I");
+    proto->audioOutputFramesPerBuffer = (*env)->GetFieldID(env, proto->clazz, "audioOutputFramesPerBuffer", "I");
+}
+
+static Config config_FromJava(JNIEnv* env, ConfigProto* proto, jobject object)
+{
+    Config config = {};
+
+    jstring filesDirJava = (jstring)(*env)->GetObjectField(env, object, proto->filesDir);
+    const char* filesDir = (*env)->GetStringUTFChars(env, filesDirJava, NULL);
+    strncpy(config.filesDir, filesDir, ARRAYSIZE(config.filesDir)-1);
+    (*env)->ReleaseStringUTFChars(env, filesDirJava, filesDir);
+
+    config.audioOutputSampleRate = (*env)->GetIntField(env, object, proto->audioOutputSampleRate);
+    config.audioOutputFramesPerBuffer = (*env)->GetIntField(env, object, proto->audioOutputFramesPerBuffer);
+
+    return config;
+}
+
 static void javaClasses_Register(JNIEnv* env, JavaClasses* classes)
 {
     nativeActivity_Register(env, &classes->nativeActivity);
     keyEvent_Register(env, &classes->keyEvent);
     motionEvent_Register(env, &classes->motionEvent);
+    config_Register(env, &classes->config);
 }
 
 static bool appThread_PollEvent(AppThread* appThread, Event* event, bool waitForEvent)
@@ -447,6 +495,28 @@ static bool filterLogEvents(EventType type)
         || type == EventType_DispatchMotionEvent;
 }
 
+#include <math.h>
+float SOUND_VOL = 0.2f;
+float SOUND_FREQ = 220.f;
+void SoundCallback(float* Buf, int NbFrames, int NbChannels, int SamplingRate, void* UserData)
+{
+    static float Phase = 0;
+
+    for (int i = 0; i < NbFrames; ++i)
+    {
+        const float TAU = 6.28318530717958f;
+
+        float Sample = sinf(Phase * TAU) * SOUND_VOL;
+        Phase += SOUND_FREQ / SamplingRate;
+        Phase = fmodf(Phase, 1.f);
+
+        for (int c = 0; c < NbChannels; ++c)
+        {
+            Buf[i * NbChannels + c] = Sample;
+        }
+    }
+}
+
 static bool appThread_HandleEvents(AppThread* appThread, App* app)
 {
     static int eventIndex = 0; // For debug purpose
@@ -462,8 +532,12 @@ static bool appThread_HandleEvents(AppThread* appThread, App* app)
         switch (event.type)
         {
             case EventType_Create:
+                
+                app->soundDevice = SoundDevice_Create(event.create.config.audioOutputFramesPerBuffer, event.create.config.audioOutputSampleRate);
                 app->game = game_Init();
                 app->imguiTest = test_Init();
+
+                SoundDevice_SetCallback(app->soundDevice, SoundCallback, NULL);
 
                 break;
 
@@ -474,6 +548,7 @@ static bool appThread_HandleEvents(AppThread* appThread, App* app)
 
                 test_Terminate(app->imguiTest);
                 game_Terminate(app->game);
+                SoundDevice_Destroy(app->soundDevice);
                 return false;
 
             case EventType_Start:
@@ -509,10 +584,12 @@ static bool appThread_HandleEvents(AppThread* appThread, App* app)
 
             case EventType_Resume:
                 app->activityPaused = false;
+                SoundDevice_Resume(app->soundDevice);
                 break;
 
             case EventType_Pause:
                 app->activityPaused = true;
+                SoundDevice_Pause(app->soundDevice);
                 break;
 
             case EventType_WindowFocusChanged:
@@ -604,7 +681,7 @@ Activity lifecycle
 */
 
 JNIEXPORT jlong JNICALL
-Java_com_example_app_NativeWrapper_onCreate(JNIEnv* jniEnv, jobject obj, jobject activity, jstring filesDir)
+Java_com_example_app_NativeWrapper_onCreate(JNIEnv* jniEnv, jobject obj, jobject activity, jobject configJava)
 {
     ALOGV("NativeWrapper::onCreate()");
 
@@ -614,12 +691,10 @@ Java_com_example_app_NativeWrapper_onCreate(JNIEnv* jniEnv, jobject obj, jobject
     appThread->javaClasses.nativeActivity.object = (*jniEnv)->NewGlobalRef(jniEnv, activity);
     javaClasses_Register(jniEnv, &appThread->javaClasses);
 
-    {
-        const char* filesDirChars = (*jniEnv)->GetStringUTFChars(jniEnv, filesDir, NULL);
-        ALOGV("chdir to '%s'", filesDirChars);
-        chdir(filesDirChars);
-        (*jniEnv)->ReleaseStringUTFChars(jniEnv, filesDir, filesDirChars);
-    }
+    Config config = config_FromJava(jniEnv, &appThread->javaClasses.config, configJava);
+
+    ALOGV("chdir to '%s'", config.filesDir);
+    chdir(config.filesDir);
 
     pthread_mutex_init(&appThread->mutex, NULL);
     pthread_cond_init(&appThread->eventAddedCond, NULL);
@@ -627,7 +702,10 @@ Java_com_example_app_NativeWrapper_onCreate(JNIEnv* jniEnv, jobject obj, jobject
 
     pthread_create(&appThread->thread, NULL, appThread_Func, appThread);
 
-    appThread_AddEvent(appThread, (Event){ EventType_Create }, true);
+    appThread_AddEvent(appThread, (Event){ 
+        .type = EventType_Create,
+        .create = { config }
+    }, true);
 
     ALOGV("NativeWrapper::onCreate() ended");
     return (jlong)((size_t)appThread);

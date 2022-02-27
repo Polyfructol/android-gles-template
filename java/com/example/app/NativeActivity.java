@@ -36,13 +36,15 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
 
     private static final String TAG = "EmptyApp";
 
-    private SurfaceView mView;
     private long mNativeHandle;
+    private SurfaceView mView;
 
-    private InputMethodManager mInputMethodManager; // (show/hide)SoftInput
+    private InputMethodManager mInputMethodManager;
     private Vibrator mVibrator;
+    private AudioManager mAudioManager;
 
     // Kept in cache to avoid micro allocation
+    private NativeWrapper.Config mConfig = new NativeWrapper.Config();
     private NativeWrapper.KeyEvent mKeyEvent = new NativeWrapper.KeyEvent();
     private NativeWrapper.MotionEvent mMotionEvent = new NativeWrapper.MotionEvent();
 
@@ -71,10 +73,8 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
                     FileOutputStream out = openFileOutput(file, Context.MODE_PRIVATE);
                     copyFile(in, out);
                     in.close();
-                    in = null;
                     out.flush();
                     out.close();
-                    out = null;
                     Log.v(TAG, "\"files/" + file + "\" copied");
                 }
                 catch (IOException e)
@@ -86,7 +86,6 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
         }
         catch (IOException e)
         {
-            //log the exception
             Log.v(TAG, "IOException: " + e);
         }
     }
@@ -95,20 +94,26 @@ public class NativeActivity extends Activity implements SurfaceHolder.Callback
     protected void onCreate(Bundle savedInstanceState)
     {
         Log.v(TAG, "----------------------------------------------------------------");
-        moveAssetsToFilesDir();
         super.onCreate(savedInstanceState);
+
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+        mInputMethodManager = (InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE);
+        mVibrator = (Vibrator)getSystemService(Context.VIBRATOR_SERVICE);
+        mAudioManager = (AudioManager)getSystemService(Context.AUDIO_SERVICE);
 
         mView = new SurfaceView(this);
         mView.getHolder().addCallback(this);
         setContentView(mView);
+        
+        moveAssetsToFilesDir();
 
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-
-        String filesDir = getApplicationContext().getFilesDir().getAbsolutePath();
-        mNativeHandle = NativeWrapper.onCreate(this, filesDir);
-
-        mInputMethodManager = (InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE);
-        mVibrator = (Vibrator)getSystemService(Context.VIBRATOR_SERVICE);
+        // Call NativeWrapper
+        mConfig.filesDir = getApplicationContext().getFilesDir().getAbsolutePath();
+        mConfig.audioOutputSampleRate = Integer.parseInt(mAudioManager.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE));
+        mConfig.audioOutputFramesPerBuffer = Integer.parseInt(mAudioManager.getProperty(AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER));
+        
+        mNativeHandle = NativeWrapper.onCreate(this, mConfig);
     }
 
     @Override

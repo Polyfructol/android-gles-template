@@ -19,8 +19,8 @@ CFLAGS+=-Wno-unused-function
 CXXFLAGS=$(CFLAGS) -fno-exceptions -fno-rtti
 CPPFLAGS=-MMD -Isrc -Iexternals/include
 LDFLAGS=-Wl,--no-undefined
-LDLIBS=-llog -landroid -lGLESv3 -lEGL -lm -static-libstdc++
-
+LDLIBS=-llog -landroid -lGLESv3 -lOpenSLES -lEGL -lm -static-libstdc++
+ 
 FILES_TO_ZIP=lib/$(ABI)/libapp.so classes.dex
 FILES_TO_ZIP_FLAGS=$(addsuffix .zipped_to_apk.flag,$(FILES_TO_ZIP))
 
@@ -37,6 +37,7 @@ JAVA_OBJS=$(subst .java,.class,$(subst java/,bin/,$(JAVA_SRCS)) $(subst gen/,bin
 JAVACFLAGS=-classpath $(ANDROID_PLATFORM)/android.jar:bin:externals/constraintlayout/java -bootclasspath "" -target 8 -source 8 -d 'bin'
 
 OBJS=src/activity.o src/game.o
+OBJS+=src/sound_device_opensl.o
 OBJS+=src/imgui_test.o
 OBJS+=src/imgui_impl_android.o src/imgui_impl_opengl3.o
 OBJS+=externals/src/gles2.o externals/src/egl.o
