@@ -109,6 +109,8 @@ sound_device_t *SoundDevice_Create(int FramesPerBuffer, int SampleRate)
     SLInterfaceID InterfacesIDs[NB_INTERFACES] = { SL_IID_ANDROIDSIMPLEBUFFERQUEUE };
     SLboolean Required[NB_INTERFACES] = { SL_BOOLEAN_TRUE };
 
+    // https://developer.android.com/ndk/guides/audio/opensl/opensl-prog-notes
+    // TODO: Destroy audio player on pause
     SLObjectItf AudioPlayerObject;
     Result = (*Engine)->CreateAudioPlayer(Engine, &AudioPlayerObject, &DataSource, &DataSink, NB_INTERFACES, InterfacesIDs, Required);
     assert(Result == SL_RESULT_SUCCESS);
@@ -132,9 +134,6 @@ sound_device_t *SoundDevice_Create(int FramesPerBuffer, int SampleRate)
     
     SoundDevice->AudioPlayer = AudioPlayer;
 
-    Result = (*AudioPlayer)->SetPlayState(AudioPlayer, SL_PLAYSTATE_PLAYING);
-    assert(Result == SL_RESULT_SUCCESS);
-
     // Enqueue buffers
     for (unsigned int i = 0; i < SoundDeviceInterface->Periods; ++i)
     {
@@ -143,6 +142,9 @@ sound_device_t *SoundDevice_Create(int FramesPerBuffer, int SampleRate)
                 SoundDevice->BufferSize);
         assert(Result == SL_RESULT_SUCCESS);
     }
+
+    Result = (*AudioPlayer)->SetPlayState(AudioPlayer, SL_PLAYSTATE_PLAYING);
+    assert(Result == SL_RESULT_SUCCESS);
 
     return SoundDeviceInterface;
 }
