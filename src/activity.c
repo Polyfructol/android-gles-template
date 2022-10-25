@@ -496,7 +496,7 @@ static bool filterLogEvents(EventType type)
 }
 
 #include <math.h>
-float SOUND_VOL = 0.2f;
+float SOUND_VOL = 0.f;
 float SOUND_FREQ = 220.f;
 void SoundCallback(float* Buf, int NbFrames, int NbChannels, int SamplingRate, void* UserData)
 {

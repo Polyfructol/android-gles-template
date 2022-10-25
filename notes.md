@@ -1,3 +1,7 @@
+# Env
+
+source set_android_env.sh
+
 # dlopen possible!
 
 In native code:
@@ -30,7 +34,7 @@ Download .so files
 ```java
         try
         {
-            URL url = new URL("https://paulgalindo.net/hot.so");
+            URL url = new URL("https://website.net/hot.so");
             HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
             try {
                 InputStream in = new BufferedInputStream(urlConnection.getInputStream());
@@ -57,7 +61,7 @@ import android.os.StrictMode;
 ```
 
 
-# GPU contxt
+# GPU context
 
 onCreate: egl context available to load data
 onSurfaceCreated: able to start to render
@@ -87,3 +91,65 @@ unloadCPUData
 
 ## Multiple devices
 ANDROID_SERIAL=emulator-5554 make run
+
+
+## Print callstack
+```c++
+
+
+#include <unwind.h>
+#include <dlfcn.h>
+#include <stdio.h>
+
+namespace {
+
+struct BacktraceState
+{
+    void** current;
+    void** end;
+};
+
+static _Unwind_Reason_Code unwindCallback(struct _Unwind_Context* context, void* arg)
+{
+    BacktraceState* state = static_cast<BacktraceState*>(arg);
+    uintptr_t pc = _Unwind_GetIP(context);
+    if (pc) {
+        if (state->current == state->end) {
+            return _URC_END_OF_STACK;
+        } else {
+            *state->current++ = reinterpret_cast<void*>(pc);
+        }
+    }
+    return _URC_NO_REASON;
+}
+
+}
+
+size_t captureBacktrace(void** buffer, size_t max)
+{
+    BacktraceState state = {buffer, buffer + max};
+    _Unwind_Backtrace(unwindCallback, &state);
+
+    return state.current - buffer;
+}
+
+#include "common.h"
+extern "C" void dumpBacktrace(void)
+{
+    const size_t max = 30;
+    void* buffer[max];
+    size_t count = captureBacktrace(buffer, max);
+    for (size_t idx = 0; idx < count; ++idx) {
+        const void* addr = buffer[idx];
+
+        Dl_info info;
+        if (dladdr(addr, &info) && info.dli_sname) {
+            ALOGV(" # %02zu : %p (%s %s)\n", idx, addr, info.dli_fname, info.dli_sname);
+        }
+        else {
+            ALOGV(" # %02zu : %p\n", idx, addr);
+        }
+}
+```
+
+Then convert address to symbols by using `(gdb) info line *[Address]`

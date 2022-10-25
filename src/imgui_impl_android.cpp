@@ -193,7 +193,7 @@ int32_t ImGui_ImplAndroid_HandleInputEvent(const InputEvent* input_event)
     case AINPUT_EVENT_TYPE_MOTION:
     {
         int32_t event_action = input_event->motionEvent.action;
-        int32_t event_pointer_index = (event_action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
+        //int32_t event_pointer_index = (event_action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
         event_action &= AMOTION_EVENT_ACTION_MASK;
         switch (event_action)
         {

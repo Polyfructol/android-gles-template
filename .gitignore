@@ -17,3 +17,5 @@ externals/src/**/*.o
 externals/src/**/*.d
 src/**/*.o
 src/**/*.d
+
+symbols/

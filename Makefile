@@ -14,7 +14,7 @@ ABI=arm64-v8a
 
 CC=clang --target=$(TARGET_HOST)
 CXX=clang++ --target=$(TARGET_HOST)
-CFLAGS=-Wall -O0 -g -funwind-tables -fPIC -fvisibility=hidden
+CFLAGS=-Wall -O0 -ggdb -funwind-tables -fPIC -fvisibility=hidden
 CFLAGS+=-Wno-unused-function
 CXXFLAGS=$(CFLAGS) -fno-exceptions -fno-rtti
 CPPFLAGS=-MMD -Isrc -Iexternals/include
@@ -36,6 +36,9 @@ JAVA_GENS=gen/$(PACKAGE_DIR)/R.java
 JAVA_OBJS=$(subst .java,.class,$(subst java/,bin/,$(JAVA_SRCS)) $(subst gen/,bin/,$(JAVA_GENS)))
 JAVACFLAGS=-classpath $(ANDROID_PLATFORM)/android.jar:bin:externals/constraintlayout/java -bootclasspath "" -target 8 -source 8 -d 'bin'
 
+# $(ASSETS_FILES) is only used for dependency checks (apk remade on changes)
+ASSETS_FILES=$(shell find assets/ -type f)
+
 OBJS=src/activity.o src/game.o
 OBJS+=src/sound_device_opensl.o
 OBJS+=src/imgui_test.o
@@ -49,7 +52,7 @@ BINARIES=lib/$(ABI)/libapp.so
 
 .DELETE_ON_ERROR:
 
-.PHONY: all clean run attach-debugger install killall log
+.PHONY: all clean run start-gdbserver install killall log
 
 all: $(FINAL_APK)
 
@@ -91,7 +94,7 @@ classes.dex: java_compiled.flag
 res_compiled.zip: $(RESOURCES)
 	aapt2 compile --dir res -o $@
 
-$(APK): res_compiled.zip AndroidManifest.xml
+$(APK): res_compiled.zip AndroidManifest.xml $(ASSETS_FILES)
 	rm -f $(FILES_TO_ZIP_FLAGS)
 	aapt2 link res_compiled.zip -o $(APK) -I $(ANDROID_PLATFORM)/android.jar -A assets --java gen --manifest AndroidManifest.xml
 
@@ -101,7 +104,7 @@ $(FINAL_APK): $(APK) res_compiled.zip AndroidManifest.xml $(FILES_TO_ZIP_FLAGS)
 
 clean:
 	rm -rf gen bin lib classes.dex java_compiled.flag $(FILES_TO_ZIP_FLAGS) $(APK) $(FINAL_APK) $(FINAL_APK).aligned $(FINAL_APK).idsig res_compiled.zip
-	rm -rf $(OBJS) $(DEPS) debug-executable
+	rm -rf $(OBJS) $(DEPS) app_process64
 
 install: $(FINAL_APK)
 	adb install -r $(FINAL_APK)
@@ -109,12 +112,11 @@ install: $(FINAL_APK)
 run: install
 	adb shell am start-activity -n $(PACKAGE)/$(PACKAGE).NativeActivity
 
-# Debug executable needed for debugging with CDT
-debug-executable:
-	echo "" | $(CC) -x c++ -shared -o $@ -
+app_process64:
+	adb pull /system/bin/app_process64
 
-attach-debugger: $(ANDROID_NDK_HOME)/prebuilt/android-arm64/gdbserver/gdbserver
-	-adb push $^ /data/local/tmp
+start-gdbserver: $(ANDROID_NDK_HOME)/prebuilt/android-arm64/gdbserver/gdbserver | app_process64
+	-adb push $< /data/local/tmp
 	-adb shell "cat /data/local/tmp/gdbserver | run-as $(PACKAGE) sh -c 'cat > /data/data/$(PACKAGE)/gdbserver && chmod 700 /data/data/$(PACKAGE)/gdbserver'"
 	adb forward tcp:8123 tcp:8123
 	adb shell "echo /data/data/$(PACKAGE)/gdbserver --attach localhost:8123 \`pidof $(PACKAGE)\` | run-as $(PACKAGE)"
