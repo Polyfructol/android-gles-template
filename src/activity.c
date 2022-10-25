@@ -830,7 +830,7 @@ Java_com_example_app_NativeWrapper_dispatchKeyEvent(JNIEnv* jniEnv, jobject obj,
     InputEvent keyEventNative = keyEvent_FromJava(jniEnv, &appThread->javaClasses.keyEvent, keyEvent);
     ALOGV("NativeWrapper::dispatchKeyEvent(%d, %d)", keyEventNative.keyEvent.keyCode, keyEventNative.keyEvent.action);
 
-    bool isHandled = false;
+    bool isHandled = false; // TODO: Remove? Seems not used anymore (event is async)
     keyEventNative.isHandled = &isHandled;
 
     appThread_AddEvent(appThread, (Event){
@@ -849,7 +849,7 @@ Java_com_example_app_NativeWrapper_dispatchTouchEvent(JNIEnv* jniEnv, jobject ob
 
     InputEvent motionEventNative = motionEvent_FromJava(jniEnv, &appThread->javaClasses.motionEvent, motionEvent);
 
-    bool isHandled = true;
+    bool isHandled = true; // TODO: Remove? Seems not used anymore (event is async)
     motionEventNative.isHandled = &isHandled;
 
     appThread_AddEvent(appThread, (Event){

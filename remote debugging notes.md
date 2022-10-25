@@ -1,9 +1,16 @@
 # Android native debugging (notes)
 
+Linux only.
+
 ## Prerequisite
 Properly configure paths in `set_android_env.sh` then execute `source set_android_env.sh` to populate `$path` env vars with android toolchain.
 
 `source set_android_env.sh` has to be called in every new terminal.
+
+## TL;DR Debug in vscode
+- Launch vscode with command line `source set_android_env.sh && code`
+- Execute `make run && make start-gdbserver` in integrated terminal
+- Start Debugging (F5)
 
 ## Debug from command line
 ```bash
@@ -95,9 +102,9 @@ Workaround:
 (gdb) sharedlibrary # Then force loading missing symbols
 ```
 
-## Use VSCode gdb frontend
+## Use vscode gdb frontend
 
-Launch VSCode through terminal.
+Launch vscode through terminal.
 ```bash
 $ source set_android_env.sh
 $ code

@@ -1,0 +1,32 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build",
+            "type": "shell",
+            "command": "make",
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Run",
+            "type": "shell",
+            "command": "make run",
+            "problemMatcher": [],
+            "dependsOn": [
+                "Build"
+            ]
+        },
+        {
+            "label": "Kill",
+            "type": "shell",
+            "command": "make killall",
+            "problemMatcher": []
+        }
+    ]
+}
