@@ -23,13 +23,13 @@ $ gdb
 (gdb) target remote localhost:8123
 ```
 
-`make run` commands:
+Details of `make run` commands:
 ```bash
 adb install -r app.apk
 adb shell am start-activity -n com.example.app/com.example.app.NativeActivity
 ```
 
-`make start-gdbserver` commands:
+Details of `make start-gdbserver` commands:
 ```bash
 adb pull /system/bin/app_process64
 adb push /home/paul/Android/Sdk/ndk/23.1.7779620/prebuilt/android-arm64/gdbserver/gdbserver /data/local/tmp
@@ -48,11 +48,13 @@ gdb
 (gdb) info sharedlibrary
 ```
 
-Extract each libraries with `adb pull` inside `symbols/` folder
+Extract each library with `adb pull` inside a `symbols/` folder
 ```bash
 mkdir symbols
 cat gdb.txt | cut -c 53- | grep -v " Yes \| process " | tail -n +2 | xargs -I{} adb pull {} symbols/
 ```
+
+Now that gdb use the local files, the startup time should be reduced dramatically.
 
 ## Attach gdb at application startup
 Sometimes, it might be necessary to debug right at the beggining of the execution.
@@ -82,6 +84,15 @@ $ jdb -connect com.sun.jdi.SocketAttach:hostname=localhost,port=1234
 Return to gdb then:
 ```bash
 (gdb) continue
+```
+
+TODO: Fix that `libapp.so` symbols are not loaded automatically because the lib is not loaded at the start of the application...
+
+Workaround:
+```bash
+(gdb) ... # Advance the program, blindly... Continue 5-6 times on __pthread_start breakpoint.
+(gdb) info sharedlibrary # Until libapp.so is listed there
+(gdb) sharedlibrary # Then force loading missing symbols
 ```
 
 ## Use VSCode gdb frontend
