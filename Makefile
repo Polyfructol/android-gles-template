@@ -1,6 +1,5 @@
 
-# TODO: Use aapt2
-ANDROID_PLATFORM=$(ANDROID_HOME)/platforms/android-32
+ANDROID_PLATFORM=$(ANDROID_HOME)/platforms/android-33
 
 PACKAGE=com.example.app
 PACKAGE_DIR=$(subst .,/,$(PACKAGE))
@@ -121,10 +120,18 @@ start-gdbserver: $(ANDROID_NDK_HOME)/prebuilt/android-arm64/gdbserver/gdbserver 
 	adb forward tcp:8123 tcp:8123
 	adb shell "echo /data/data/$(PACKAGE)/gdbserver --attach localhost:8123 \`pidof $(PACKAGE)\` | run-as $(PACKAGE)"
 
+start-lldb-server: $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.6/lib/linux/aarch64/lldb-server | app_process64
+	-adb push $< /data/local/tmp
+	-adb shell "cat /data/local/tmp/lldb-server | run-as $(PACKAGE) sh -c 'cat > /data/data/$(PACKAGE)/lldb-server && chmod 700 /data/data/$(PACKAGE)/lldb-server'"
+	adb shell pidof $(PACKAGE)
+	adb forward tcp:8123 tcp:8123
+	adb shell "echo /data/data/$(PACKAGE)/lldb-server platform --listen "*:8123" --server | run-as $(PACKAGE)"
+
 log:
 	adb logcat --pid=`adb shell pidof $(PACKAGE) | sed 's/\r//g'`
 
 killall:
+	-adb shell run-as $(PACKAGE) killall lldb-server
 	-adb shell run-as $(PACKAGE) killall gdbserver
 	-adb shell run-as $(PACKAGE) killall $(PACKAGE)
 

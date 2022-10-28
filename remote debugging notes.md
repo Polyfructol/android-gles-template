@@ -7,6 +7,13 @@ Properly configure paths in `set_android_env.sh` then execute `source set_androi
 
 `source set_android_env.sh` has to be called in every new terminal.
 
+# Version change
+## NDK 25
+`gdb` and `gdbserver` prebuilt binaries are not provided in ndk >= 25... It seems that `lldb` is favorited over `gdb`. 
+
+`lldb-server` path:
+```ndk/25.1.8937393/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.6/lib/linux/aarch64/lldb-server```
+
 ## TL;DR Debug in vscode
 - Launch vscode with command line `source set_android_env.sh && code`
 - Execute `make run && make start-gdbserver` in integrated terminal
@@ -53,6 +60,7 @@ gdb
 # Print shared library dependencies into gdb.txt
 (gdb) set logging on
 (gdb) info sharedlibrary
+# press 'c' to complete output then quit ('q')
 ```
 
 Extract each library with `adb pull` inside a `symbols/` folder
@@ -64,7 +72,8 @@ cat gdb.txt | cut -c 53- | grep -v " Yes \| process " | tail -n +2 | xargs -I{} 
 Now that gdb use the local files, the startup time should be reduced dramatically.
 
 ## Attach gdb at application startup
-Sometimes, it might be necessary to debug right at the beggining of the execution.
+
+Sometimes, it might be necessary to debug right at the beggining of the execution. [Link to official doc](https://source.android.com/docs/core/tests/debug/gdb#app-startup).
 
 First, start the application in a special "Waiting For Debugger" state.
 ```bash
@@ -124,6 +133,19 @@ adb shell run-as com.example.app killall com.example.app
 ```
 
 Inspect vscode gdb commands by enabling `engineLogging` in `launch.json`
+
+## LLDB
+Start a lldb-server instance on target device
+```bash
+$ make start-lldb-server
+```
+
+```bash
+$ lldb
+platform select remote-android
+platform connect localhost:8123
+process attach --pid 1406
+```
 
 ## (OLD) Attach gdb after app launched
 
