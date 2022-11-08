@@ -19,7 +19,7 @@ cd android-env
 
 Download **JDK** https://jdk.java.net/19/ (tar.gz) 
 
-Download **Android Command-line tools** https://developer.android.com/studio#command-tools (zip)
+Download **Android Command-line tools** https://developer.android.com/studio#command-line-tools-only (zip)
 
 Decompress them manually or following those commands
 ```bash
